@@ -891,7 +891,20 @@ function materializeCandidate(hand, cand) {
 }
 
 // 그리디로 손패에서 낼 묶음들을 찾음: 가치가 큰 후보부터 충돌 없이 채택
-function findBestMoves(hand) {
+function greedyPick(scored) {
+  const usedHandIdx = new Set();
+  const moves = [];
+  for (const cand of scored) {
+    if (cand.idxSet.some(i => usedHandIdx.has(i))) continue;
+    cand.idxSet.forEach(i => usedHandIdx.add(i));
+    moves.push(cand.tiles);
+  }
+  const usedIds = new Set();
+  moves.forEach(m => m.forEach(t => usedIds.add(t.id)));
+  return { moves, usedIds };
+}
+
+function findBestMoves(hand, aggressive) {
   const candidates = enumerateCandidateSets(hand);
   const materialized = candidates.map(c => materializeCandidate(hand, c));
 
@@ -902,21 +915,18 @@ function findBestMoves(hand) {
     size: tiles.length,
   })).filter(c => evaluateGroup(c.tiles).valid); // 안전 재검증: invalid는 절대 통과 못함
 
-  // 가치 내림차순, 동률이면 더 많은 타일을 비우는 쪽 우선
-  scored.sort((a, b) => (b.value - a.value) || (b.size - a.size));
+  const byValue = scored.slice().sort((a, b) => (b.value - a.value) || (b.size - a.size));
+  const byValueResult = greedyPick(byValue);
 
-  const usedHandIdx = new Set();
-  const moves = [];
+  if (!aggressive) return byValueResult;
 
-  for (const cand of scored) {
-    if (cand.idxSet.some(i => usedHandIdx.has(i))) continue;
-    cand.idxSet.forEach(i => usedHandIdx.add(i));
-    moves.push(cand.tiles);
-  }
+  // 적극 모드: 손패를 최대한 적게 들고 있도록, 개수 우선 그리디도 계산해서
+  // 실제로 더 많은 타일을 비우는 쪽을 선택한다 (단순 정렬 기준 교체는
+  // 그리디 함정으로 오히려 적게 비울 수 있어 두 결과를 비교해 더 나은 쪽을 채택).
+  const bySize = scored.slice().sort((a, b) => (b.size - a.size) || (b.value - a.value));
+  const bySizeResult = greedyPick(bySize);
 
-  const usedIds = new Set();
-  moves.forEach(m => m.forEach(t => usedIds.add(t.id)));
-  return { moves, usedIds };
+  return bySizeResult.usedIds.size >= byValueResult.usedIds.size ? bySizeResult : byValueResult;
 }
 
 // 손패의 남은 타일들을 보드의 기존 그룹에 이어붙일 수 있는지 시도 (그룹 확장)
@@ -1147,6 +1157,42 @@ function btn(label, cls, onClick, disabled) {
 const App = document.getElementById("app");
 let state = { screen: "lobby" };
 
+// ---- AI 레벨 시스템 ----
+// 이겨도 +1, 져도 -1 (0 미만으로는 내려가지 않음). 레벨이 높을수록 AI가 손패를 더 적극적으로(많이) 냄.
+let aiLevel = 0;
+let aiLevelLoaded = false;
+
+function aiAggressive() { return aiLevel >= 3; } // 레벨 3부터 "타일 개수 우선" 그리디로 전환
+
+async function loadAiLevel() {
+  if (aiLevelLoaded) return;
+  aiLevelLoaded = true;
+  try {
+    if (window.storage) {
+      const res = await window.storage.get("ai-level", false);
+      if (res && typeof res.value !== "undefined") {
+        const n = parseInt(res.value, 10);
+        if (!isNaN(n)) aiLevel = n;
+      }
+    }
+  } catch (e) {
+    // 저장된 값 없음 또는 storage 미지원: 0부터 시작
+  }
+}
+
+async function saveAiLevel() {
+  try {
+    if (window.storage) await window.storage.set("ai-level", String(aiLevel), false);
+  } catch (e) {
+    // 저장 실패해도 게임 진행에는 영향 없음 (이번 세션 동안은 메모리 값 유지)
+  }
+}
+
+function bumpAiLevel(delta) {
+  aiLevel = Math.max(0, aiLevel + delta);
+  saveAiLevel();
+}
+
 function render() {
   clearTurnTimer();
   boardCanvasEl = null; // reset board canvas ref
@@ -1155,6 +1201,11 @@ function render() {
   else if (state.screen === "ai") App.appendChild(renderAIGame());
   else if (state.screen === "local") App.appendChild(renderLocalGame());
   else if (state.screen === "online") App.appendChild(renderOnlineGame());
+}
+
+async function renderAsync() {
+  await loadAiLevel();
+  render();
 }
 
 function goLobby() {
@@ -1193,6 +1244,9 @@ function renderLobby() {
   const aiCard = h("div", { class: "mode-card" });
   aiCard.appendChild(h("div", { class: "mode-card-title" }, ["🤖 AI와 대전"]));
   aiCard.appendChild(h("div", { class: "mode-card-desc" }, ["혼자서 AI를 상대로 플레이합니다."]));
+  aiCard.appendChild(h("div", {
+    style: { fontWeight: "700", fontSize: "14px", margin: "4px 0 10px", color: "#ffd76a" }
+  }, ["⭐ 현재 AI 레벨: " + aiLevel + (aiAggressive() ? " (적극 모드)" : "")]));
   aiCard.appendChild(btn("AI 대전 시작", "btn-green btn-big", () => {
     state = { screen: "ai" };
     render();
@@ -1610,6 +1664,7 @@ function renderAIGame() {
     }
     if (s.hand.length === 0) {
       s.winner = "player";
+      bumpAiLevel(1);
       render();
       return;
     }
@@ -1622,7 +1677,7 @@ function renderAIGame() {
   }
 
   function runAiTurn() {
-    const { moves, usedIds } = findBestMoves(s.aiHand);
+    const { moves, usedIds } = findBestMoves(s.aiHand, aiAggressive());
     let newBoard = s.board.map(g => g.slice());
     let remaining = s.aiHand.filter(t => !usedIds.has(t.id));
     let played = false;
@@ -1654,6 +1709,7 @@ function renderAIGame() {
       s.aiHand = remaining;
       if (remaining.length === 0) {
         s.winner = "ai";
+        bumpAiLevel(-1);
         render();
         return;
       }
@@ -1685,7 +1741,9 @@ function renderAIGame() {
   if (s.winner) {
     overlayEl = winnerOverlay(
       s.winner === "player" ? "🏆" : "🤖",
-      s.winner === "player" ? "승리했습니다! 🎉" : "AI가 승리했습니다",
+      s.winner === "player"
+        ? "승리했습니다! 🎉 (AI 레벨 ↑ → " + aiLevel + ")"
+        : "AI가 승리했습니다 (AI 레벨 ↓ → " + aiLevel + ")",
       () => { aiState = newAIState(); render(); },
       goLobby
     );
@@ -1701,7 +1759,8 @@ function renderAIGame() {
 
   return buildGameShell({
     title: "루미큐브 · AI 대전",
-    subtitle: "풀 " + s.pool.length + "개 · AI 패 " + s.aiHand.length + "개",
+    subtitle: "⭐ AI 레벨 " + aiLevel + (aiAggressive() ? " (적극 모드)" : "") +
+      " · 풀 " + s.pool.length + "개 · AI 패 " + s.aiHand.length + "개",
     message: s.message,
     tone: s.turn === "ai" ? "wait" : "go",
     boardValid,
@@ -2461,7 +2520,7 @@ function renderPassScreen(s) {
 }
 
 // ============ 초기 렌더 ============
-render();
+renderAsync();
 </script>
 </body>
 </html>
