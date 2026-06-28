@@ -1330,11 +1330,12 @@ function buildGameShell(opts) {
   const labelRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: "0", marginBottom: "4px" } });
   labelRow.appendChild(h("div", { class: "hand-label" }, ["내 손패 (" + opts.hand.length + "개) · 탭=선택 · 길게누름=드래그"]));
   if (opts.onSortHand) {
+    const sortLabel = opts.sortMode === "number" ? "🔢 숫자순 (탭→색상순)" : "🎨 색상순 (탭→숫자순)";
     const sortBtn = h("button", {
       class: "btn btn-yellow",
       style: { padding: "5px 12px", fontSize: "12px", flexShrink: "0", fontWeight: "700" },
       onClick: opts.onSortHand
-    }, ["🔢 정렬"]);
+    }, [sortLabel]);
     labelRow.appendChild(sortBtn);
   }
   handArea.appendChild(labelRow);
@@ -1404,11 +1405,23 @@ function toast(msg) {
 // ============ AI 대전 모드 ============
 let aiState = null;
 
-function sortTiles(tiles) {
+function sortTilesByColor(tiles) {
   return tiles.slice().sort((a, b) => {
     if (a.joker !== b.joker) return a.joker ? 1 : -1;
     return a.color.localeCompare(b.color) || a.number - b.number;
   });
+}
+
+function sortTilesByNumber(tiles) {
+  return tiles.slice().sort((a, b) => {
+    if (a.joker !== b.joker) return a.joker ? 1 : -1;
+    return a.number - b.number || a.color.localeCompare(b.color);
+  });
+}
+
+// 하위 호환: 기존 호출부(초기 배분 등)는 색별 정렬을 기본으로 사용
+function sortTiles(tiles) {
+  return sortTilesByColor(tiles);
 }
 
 function newAIState() {
@@ -1417,6 +1430,7 @@ function newAIState() {
     pool: deck.slice(28),
     hand: sortTiles(deck.slice(0, 14)),
     aiHand: deck.slice(14, 28),
+    sortMode: "color",
     board: [],
     snapshot: null,
     snapshotHand: null,
@@ -1550,7 +1564,8 @@ function renderAIGame() {
   }
 
   function sortHand() {
-    s.hand = sortTiles(s.hand);
+    s.sortMode = s.sortMode === "color" ? "number" : "color";
+    s.hand = s.sortMode === "color" ? sortTilesByColor(s.hand) : sortTilesByNumber(s.hand);
     render();
   }
 
@@ -1575,7 +1590,7 @@ function renderAIGame() {
       s.snapshot = null; s.snapshotHand = null;
     }
     const t = s.pool.shift();
-    s.hand = sortTiles(s.hand.concat([t]));
+    s.hand = (s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor)(s.hand.concat([t]));
     s.message = "타일을 뽑았습니다. AI 차례로 넘어갑니다.";
     s.turn = "ai";
     s.selectedOrder = [];
@@ -1700,6 +1715,7 @@ function renderAIGame() {
     onDropToNewGroup: dropToNewGroup,
     onDropToHand: dropToHand,
     onSortHand: sortHand,
+    sortMode: s.sortMode,
     canInteract: s.turn === "player" && !s.winner,
     onExit: goLobby,
     controlsEls: controls,
@@ -1717,6 +1733,7 @@ function newLocalState(names) {
     names,
     pool: deck.slice(28),
     hands: [sortTiles(deck.slice(0, 14)), sortTiles(deck.slice(14, 28))],
+    sortModes: ["color", "color"],
     board: [],
     snapshot: null,
     snapshotHand: null,
@@ -1857,7 +1874,9 @@ function renderLocalGame() {
   }
 
   function sortHand() {
-    s.hands[s.turn] = sortTiles(s.hands[s.turn]);
+    const newMode = s.sortModes[s.turn] === "color" ? "number" : "color";
+    s.sortModes[s.turn] = newMode;
+    s.hands[s.turn] = newMode === "color" ? sortTilesByColor(s.hands[s.turn]) : sortTilesByNumber(s.hands[s.turn]);
     render();
   }
 
@@ -1881,7 +1900,8 @@ function renderLocalGame() {
       s.snapshot = null; s.snapshotHand = null;
     }
     const t = s.pool.shift();
-    s.hands[s.turn] = sortTiles(s.hands[s.turn].concat([t]));
+    const fn = s.sortModes[s.turn] === "number" ? sortTilesByNumber : sortTilesByColor;
+    s.hands[s.turn] = fn(s.hands[s.turn].concat([t]));
     passTurn(other, s.names[other] + "님의 차례입니다.");
   }
 
@@ -1958,6 +1978,7 @@ function renderLocalGame() {
     onDropToNewGroup: dropToNewGroup,
     onDropToHand: dropToHand,
     onSortHand: sortHand,
+    sortMode: s.sortModes[s.turn],
     canInteract: !s.winner,
     onExit: goLobby,
     controlsEls: controls,
@@ -2000,6 +2021,7 @@ function newOnlineGameState(names, mySeat) {
     mySeat, // 0(host) 또는 1(guest) - 내가 어느 자리인지
     pool: deck.slice(28),
     hands: [sortTiles(deck.slice(0, 14)), sortTiles(deck.slice(14, 28))],
+    sortMode: "color", // 내 화면에서만 쓰는 로컬 UI 상태, 상대와 동기화하지 않음
     board: [],
     snapshot: null,
     snapshotHand: null,
@@ -2305,7 +2327,8 @@ function renderOnlineGame() {
   }
 
   function sortHand() {
-    s.hands[mySeat] = sortTiles(s.hands[mySeat]);
+    s.sortMode = s.sortMode === "color" ? "number" : "color";
+    s.hands[mySeat] = s.sortMode === "color" ? sortTilesByColor(s.hands[mySeat]) : sortTilesByNumber(s.hands[mySeat]);
     render();
   }
 
@@ -2339,7 +2362,8 @@ function renderOnlineGame() {
       s.snapshot = null; s.snapshotHand = null;
     }
     const t = s.pool.shift();
-    s.hands[mySeat] = sortTiles(s.hands[mySeat].concat([t]));
+    const fn = s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor;
+    s.hands[mySeat] = fn(s.hands[mySeat].concat([t]));
     finishLocalTurnAndSync(other, s.names[other] + "님의 차례입니다.");
   }
 
@@ -2411,6 +2435,7 @@ function renderOnlineGame() {
     onDropToNewGroup: dropToNewGroup,
     onDropToHand: dropToHand,
     onSortHand: sortHand,
+    sortMode: s.sortMode,
     canInteract: myTurn && s.winner === null,
     onExit: goLobby,
     controlsEls: controls,
