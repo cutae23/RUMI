@@ -1,0 +1,2442 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>루미큐브 · RUMMIKUB</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@500;700&family=Inter:wght@400;500;600;700&display=swap">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root {
+    --bg-grad: radial-gradient(ellipse at top, #1B4332 0%, #0E2A1E 55%, #0A1F15 100%);
+    --cream: #F1ECDB;
+    --red: #C8392B;
+    --blue: #2D5FA8;
+    --yellow: #D9A028;
+    --black: #1F2226;
+    --purple: #8B4FB3;
+    --green: #5FAE6E;
+    --tile-scale: 1;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+    background: var(--bg-grad);
+    color: var(--cream);
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app { width: 100%; min-height: 100vh; }
+
+  /* ---------- 공통 ---------- */
+  .screen {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .center-screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+  }
+  .screen.center-screen {
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+  }
+  .btn {
+    padding: 9px 14px;
+    border-radius: 8px;
+    border: none;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    transition: transform .08s ease, opacity .08s ease;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled {
+    background: rgba(255,255,255,0.08) !important;
+    color: rgba(241,236,219,0.4) !important;
+    cursor: default;
+  }
+  .btn-green { background: var(--green); }
+  .btn-blue { background: var(--blue); }
+  .btn-red { background: var(--red); }
+  .btn-purple { background: var(--purple); }
+  .btn-yellow { background: var(--yellow); }
+  .btn-big { padding: 14px; font-size: 15px; }
+
+  /* ---------- 로비 ---------- */
+  .logo {
+    font-family: 'Roboto Slab', serif;
+    font-weight: 700;
+    font-size: 32px;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+  }
+  .logo .accent { color: var(--yellow); }
+  .subtitle { font-size: 13px; opacity: .65; margin-bottom: 28px; }
+  .lobby-box {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    text-align: left;
+  }
+  .field-label { font-size: 12px; opacity: .6; }
+  .text-input {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(241,236,219,0.25);
+    background: rgba(255,255,255,0.06);
+    color: var(--cream);
+    font-size: 14px;
+    outline: none;
+    font-family: 'Inter', sans-serif;
+    width: 100%;
+  }
+  .divider { height: 1px; background: rgba(241,236,219,0.15); margin: 8px 0; }
+  .mode-card {
+    border: 1px solid rgba(241,236,219,0.15);
+    border-radius: 10px;
+    padding: 14px;
+    background: rgba(255,255,255,0.03);
+  }
+  .mode-card-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+  .mode-card-desc { font-size: 12px; opacity: .55; margin-bottom: 10px; line-height: 1.5; }
+
+  /* ---------- 게임 헤더/메시지 ---------- */
+  .game-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(241,236,219,0.15);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .game-title { font-family: 'Roboto Slab', serif; font-weight: 700; font-size: 18px; }
+  .game-subtitle { font-size: 11px; opacity: .7; margin-top: 2px; }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .zoom-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+  .zoom-group-label {
+    font-size: 9px;
+    opacity: 0.5;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    font-family: 'Inter', sans-serif;
+  }
+  .zoom-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: rgba(255,255,255,0.12);
+    color: var(--cream);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', sans-serif;
+  }
+  .zoom-btn:active { transform: scale(0.92); }
+  .zoom-label {
+    font-size: 11px;
+    opacity: .75;
+    min-width: 36px;
+    text-align: center;
+    font-weight: 600;
+  }
+  .timer-badge {
+    font-family: 'Roboto Slab', serif;
+    font-weight: 700;
+    font-size: 14px;
+    padding: 5px 11px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.08);
+    white-space: nowrap;
+  }
+  .timer-badge.warn {
+    background: rgba(200,57,43,0.45);
+    color: #fff;
+    animation: timer-pulse 1s infinite;
+  }
+  @keyframes timer-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .message-bar {
+    padding: 7px 16px;
+    border-bottom: 1px solid rgba(241,236,219,0.1);
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: rgba(255,255,255,0.05);
+    flex-shrink: 0;
+  }
+  .message-bar.tone-wait { background: rgba(45,95,168,0.18); }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); flex-shrink: 0; display: inline-block;
+  }
+  .dot.wait { background: var(--yellow); }
+  .warn-text { color: #E08585; font-weight: 600; }
+
+  /* ---------- 보드 ---------- */
+  .board-area {
+    flex: 1 1 auto;
+    overflow: hidden;
+    position: relative;
+    min-height: 0;
+    touch-action: none;
+    cursor: grab;
+  }
+  .board-area:active { cursor: grabbing; }
+  .board-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transform-origin: 0 0;
+    will-change: transform;
+    min-width: 100%;
+  }
+  .board-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: .4;
+    font-size: 14px;
+    border: 2px dashed rgba(241,236,219,0.2);
+    border-radius: 12px;
+    min-height: 80px;
+    min-width: 200px;
+  }
+  .group-row {
+    display: flex;
+    gap: 3px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(95,174,110,0.4);
+    flex-wrap: wrap;
+    align-items: center;
+    min-height: 0;
+  }
+  .group-row.invalid { border-color: rgba(224,133,133,0.5); }
+  .group-row.drag-over {
+    background: rgba(217,160,40,0.15);
+    border-color: rgba(217,160,40,0.6);
+  }
+  .new-group-drop {
+    border: 2px dashed rgba(241,236,219,0.25);
+    border-radius: 10px;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    opacity: 0.45;
+    transition: background .1s ease, border-color .1s ease, opacity .1s ease;
+  }
+  .new-group-drop.drag-over {
+    background: rgba(217,160,40,0.12);
+    border-color: rgba(217,160,40,0.6);
+    opacity: 0.9;
+  }
+  .add-here-btn {
+    margin-left: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* ---------- 타일 ---------- */
+  .tile {
+    width: calc(32px * var(--tile-scale));
+    height: calc(44px * var(--tile-scale));
+    border-radius: 5px;
+    background: linear-gradient(180deg, #FBF8EF 0%, #F1ECDB 100%);
+    border: 1px solid #C9C0A4;
+    box-shadow: 0 2px 4px rgba(0,0,0,.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Roboto Slab', Georgia, serif;
+    font-weight: 700;
+    font-size: calc(16px * var(--tile-scale));
+    user-select: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    touch-action: none;
+    transition: width .12s ease, height .12s ease, font-size .12s ease, transform .12s ease, box-shadow .12s ease;
+  }
+  .tile.small { width: calc(26px * var(--tile-scale)); height: calc(36px * var(--tile-scale)); font-size: calc(12px * var(--tile-scale)); }
+  .tile.selected {
+    border: 2px solid var(--blue);
+    box-shadow: 0 0 0 3px rgba(45,95,168,.25), 0 2px 4px rgba(0,0,0,.25);
+    transform: translateY(-8px);
+  }
+  .tile.dragging { opacity: 0.35; }
+  .tile-wrap { position: relative; flex-shrink: 0; }
+  .order-badge {
+    position: absolute;
+    top: -6px; right: -6px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--blue);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', sans-serif;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .tile.facedown {
+    background: linear-gradient(135deg, #1B4332, #0E2A1E);
+    border: 1px solid rgba(241,236,219,0.25);
+  }
+
+  /* ---------- 컨트롤바 ---------- */
+  .control-bar {
+    padding: 10px 20px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    border-top: 1px solid rgba(241,236,219,0.1);
+    background: rgba(0,0,0,0.15);
+    flex-shrink: 0;
+  }
+
+  /* ---------- 손패 ---------- */
+  .hand-area {
+    padding: 8px 14px 10px;
+    background: rgba(0,0,0,0.25);
+    border-top: 1px solid rgba(241,236,219,0.15);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    transition: background .1s ease;
+  }
+  .hand-area.drag-over { background: rgba(217,160,40,0.1); }
+  .hand-label { font-size: 11px; opacity: .6; flex-shrink: 0; margin-bottom: 2px; }
+  .hand-tiles {
+    display: flex;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow: visible;
+    padding: 10px 0 4px; /* top pad for selected-lift */
+  }
+
+  /* ---------- 오버레이 ---------- */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,20,15,0.85);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 50;
+  }
+  .overlay-box {
+    background: #1B4332;
+    border: 1px solid rgba(217,160,40,0.5);
+    border-radius: 16px;
+    padding: 32px 40px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    max-width: 90vw;
+  }
+  .overlay-emoji { font-size: 40px; margin-bottom: 8px; }
+  .overlay-title { font-family: 'Roboto Slab', serif; font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .overlay-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+
+  .turn-pass-overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,20,15,0.95);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 60;
+    text-align: center;
+    padding: 24px;
+  }
+
+  .toast {
+    position: fixed;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--red);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3);
+    cursor: pointer;
+    max-width: 90vw;
+  }
+
+  @media (max-width: 480px) {
+    .tile { width: calc(38px * var(--tile-scale)); height: calc(52px * var(--tile-scale)); font-size: calc(18px * var(--tile-scale)); }
+    .tile.small { width: calc(28px * var(--tile-scale)); height: calc(38px * var(--tile-scale)); font-size: calc(13px * var(--tile-scale)); }
+    .control-bar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .control-bar .btn {
+      padding: 9px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+"use strict";
+
+// ============ 상수 / 유틸 ============
+const COLORS = ["red", "blue", "yellow", "black"];
+const COLOR_HEX = { red: "#C8392B", blue: "#2D5FA8", yellow: "#D9A028", black: "#1F2226" };
+
+// ============ 보드 패닝+줌 ============
+let boardTransform = { x: 0, y: 0, scale: 1 };
+const BOARD_SCALE_MIN = 0.4, BOARD_SCALE_MAX = 2.5;
+let boardCanvasEl = null; // set when building game shell
+
+function applyBoardTransform() {
+  if (!boardCanvasEl) return;
+  boardCanvasEl.style.transform =
+    `translate(${boardTransform.x}px,${boardTransform.y}px) scale(${boardTransform.scale})`;
+}
+
+function resetBoardTransform() {
+  boardTransform = { x: 0, y: 0, scale: 1 };
+  applyBoardTransform();
+}
+
+function clampBoardTransform() {
+  // no hard clamp on pan — let user pan freely
+  boardTransform.scale = Math.max(BOARD_SCALE_MIN, Math.min(BOARD_SCALE_MAX, boardTransform.scale));
+}
+
+function attachBoardPanZoom(areaEl, canvasEl) {
+  boardCanvasEl = canvasEl;
+  applyBoardTransform();
+
+  let pointers = {};
+  let lastPinchDist = null;
+  let panPointerId = null;
+  let panLastPos = null;
+
+  areaEl.addEventListener("pointerdown", (e) => {
+    const isTile = e.target.closest(".tile, .tile-wrap, .btn");
+    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    const ids = Object.keys(pointers);
+
+    if (ids.length === 2) {
+      // Start pinch
+      panPointerId = null;
+      const [a, b] = ids.map(id => pointers[id]);
+      lastPinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+    } else if (ids.length === 1 && !isTile) {
+      // Single finger on board background = pan
+      panPointerId = e.pointerId;
+      panLastPos = { x: e.clientX, y: e.clientY };
+      e.preventDefault();
+    }
+  });
+
+  areaEl.addEventListener("pointermove", (e) => {
+    if (!pointers[e.pointerId]) return;
+    const ids = Object.keys(pointers);
+
+    if (ids.length >= 2) {
+      // Pinch zoom
+      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+      const [a, b] = ids.slice(0, 2).map(id => pointers[id]);
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (lastPinchDist && dist > 0) {
+        const ratio = dist / lastPinchDist;
+        const cx = (a.x + b.x) / 2;
+        const cy = (a.y + b.y) / 2;
+        const rect = areaEl.getBoundingClientRect();
+        const lx = cx - rect.left, ly = cy - rect.top;
+        const newScale = Math.max(BOARD_SCALE_MIN, Math.min(BOARD_SCALE_MAX, boardTransform.scale * ratio));
+        const scaleDiff = newScale / boardTransform.scale;
+        boardTransform.x = lx - scaleDiff * (lx - boardTransform.x);
+        boardTransform.y = ly - scaleDiff * (ly - boardTransform.y);
+        boardTransform.scale = newScale;
+        applyBoardTransform();
+        // Also pan (centroid movement)
+        const prevCx = (ids.slice(0,2).map(id => {
+          if (id === String(e.pointerId)) {
+            return pointers[id]; // updated above already
+          }
+          return pointers[id];
+        }));
+      }
+      lastPinchDist = dist;
+
+      // Pan from centroid movement
+      const prevA = pointers[ids[0]], prevB = pointers[ids[1]];
+      // centroid already accounted in pinch above; do pan separately if needed
+    } else if (ids.length === 1 && e.pointerId === panPointerId && panLastPos) {
+      const dx = e.clientX - panLastPos.x;
+      const dy = e.clientY - panLastPos.y;
+      boardTransform.x += dx;
+      boardTransform.y += dy;
+      applyBoardTransform();
+      panLastPos = { x: e.clientX, y: e.clientY };
+      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    } else {
+      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    }
+  });
+
+  function endPointer(e) {
+    delete pointers[e.pointerId];
+    lastPinchDist = null;
+    if (e.pointerId === panPointerId) {
+      panPointerId = null;
+      panLastPos = null;
+    }
+  }
+  areaEl.addEventListener("pointerup", endPointer);
+  areaEl.addEventListener("pointercancel", endPointer);
+
+  // Mouse wheel zoom
+  areaEl.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const rect = areaEl.getBoundingClientRect();
+    const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
+    const delta = e.deltaY > 0 ? 0.88 : 1.13;
+    const newScale = Math.max(BOARD_SCALE_MIN, Math.min(BOARD_SCALE_MAX, boardTransform.scale * delta));
+    const scaleDiff = newScale / boardTransform.scale;
+    boardTransform.x = lx - scaleDiff * (lx - boardTransform.x);
+    boardTransform.y = ly - scaleDiff * (ly - boardTransform.y);
+    boardTransform.scale = newScale;
+    applyBoardTransform();
+  }, { passive: false });
+}
+
+function buildBoardZoomControls() {
+  const wrap = h("div", { class: "zoom-controls" });
+  wrap.appendChild(h("button", {
+    class: "zoom-btn",
+    onClick: () => {
+      boardTransform.scale = Math.max(BOARD_SCALE_MIN, boardTransform.scale - 0.15);
+      applyBoardTransform();
+    }
+  }, ["−"]));
+  wrap.appendChild(h("button", {
+    class: "zoom-btn",
+    style: { fontSize: "13px", padding: "0 4px", width: "auto", minWidth: "28px" },
+    onClick: () => { resetBoardTransform(); }
+  }, ["↺"]));
+  wrap.appendChild(h("button", {
+    class: "zoom-btn",
+    onClick: () => {
+      boardTransform.scale = Math.min(BOARD_SCALE_MAX, boardTransform.scale + 0.15);
+      applyBoardTransform();
+    }
+  }, ["+"]));
+  return wrap;
+}
+
+// ============ 손패 타일 줌 ============
+let zoomLevel = 1;
+const ZOOM_MIN = 0.7, ZOOM_MAX = 1.8, ZOOM_STEP = 0.1;
+
+function applyZoom() {
+  document.documentElement.style.setProperty("--tile-scale", zoomLevel.toFixed(2));
+}
+function zoomIn() {
+  zoomLevel = Math.min(ZOOM_MAX, Math.round((zoomLevel + ZOOM_STEP) * 100) / 100);
+  applyZoom();
+}
+function zoomOut() {
+  zoomLevel = Math.max(ZOOM_MIN, Math.round((zoomLevel - ZOOM_STEP) * 100) / 100);
+  applyZoom();
+}
+applyZoom();
+
+function buildZoomControls() {
+  const wrap = h("div", { class: "zoom-controls" });
+  wrap.appendChild(h("button", {
+    class: "zoom-btn",
+    onClick: () => { zoomOut(); render(); }
+  }, ["−"]));
+  wrap.appendChild(h("span", { class: "zoom-label" }, [Math.round(zoomLevel * 100) + "%"]));
+  wrap.appendChild(h("button", {
+    class: "zoom-btn",
+    onClick: () => { zoomIn(); render(); }
+  }, ["+"]));
+  return wrap;
+}
+
+// ============ 턴 타이머 ============
+let turnTimeSeconds = 60; // 0 = 무제한
+let timerIntervalId = null;
+
+function getTurnTimeMs() {
+  return turnTimeSeconds > 0 ? turnTimeSeconds * 1000 : null;
+}
+function newTurnDeadline() {
+  const ms = getTurnTimeMs();
+  return ms ? Date.now() + ms : null;
+}
+function clearTurnTimer() {
+  if (timerIntervalId) { clearInterval(timerIntervalId); timerIntervalId = null; }
+}
+function formatTime(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const sec = totalSeconds % 60;
+  return m + ":" + String(sec).padStart(2, "0");
+}
+// deadline(ms epoch)까지 카운트다운하는 배지를 만들고, 0이 되면 onTimeout 1회 호출
+function buildTimerBadge(deadline, onTimeout) {
+  const el = h("div", { class: "timer-badge" }, ["⏱ --:--"]);
+  function tick() {
+    const remain = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    el.textContent = "⏱ " + formatTime(remain);
+    el.classList.toggle("warn", remain <= 10);
+    if (remain <= 0) {
+      clearTurnTimer();
+      onTimeout();
+    }
+  }
+  tick();
+  timerIntervalId = setInterval(tick, 250);
+  return el;
+}
+
+function createDeck() {
+  const tiles = [];
+  let id = 0;
+  for (let copy = 0; copy < 2; copy++) {
+    for (const color of COLORS) {
+      for (let n = 1; n <= 13; n++) tiles.push({ id: "t" + (id++), color, number: n, joker: false });
+    }
+  }
+  tiles.push({ id: "t" + (id++), color: "red", number: 0, joker: true });
+  tiles.push({ id: "t" + (id++), color: "black", number: 0, joker: true });
+  return tiles;
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ============ 세트 유효성 검사 ============
+function evaluateGroup(group) {
+  if (group.length === 0) return { valid: true, value: 0 };
+  if (group.length < 3) return { valid: false, value: 0 };
+  const reals = group.filter(t => !t.joker);
+
+  if (reals.length > 0) {
+    const sameNumber = reals.every(t => t.number === reals[0].number);
+    if (sameNumber && group.length <= 4) {
+      const colorsUsed = new Set(reals.map(t => t.color));
+      if (colorsUsed.size === reals.length) {
+        return { valid: true, value: reals[0].number * group.length, type: "group" };
+      }
+    }
+  }
+
+  if (reals.length > 0) {
+    const sameColor = reals.every(t => t.color === reals[0].color);
+    if (sameColor) {
+      let leadingJokers = 0;
+      for (const t of group) { if (t.joker) leadingJokers++; else break; }
+      const firstReal = reals[0];
+      let startNumber = firstReal.number - leadingJokers;
+      if (startNumber < 1) return { valid: false, value: 0 };
+      let cur = startNumber, value = 0, valid = true;
+      for (const t of group) {
+        if (cur > 13) return { valid: false, value: 0 };
+        if (t.joker) { value += cur; }
+        else {
+          if (t.number !== cur) { valid = false; break; }
+          value += cur;
+        }
+        cur++;
+      }
+      if (valid) return { valid: true, value, type: "run" };
+    }
+  }
+  return { valid: false, value: 0 };
+}
+
+function evaluateBoard(board) {
+  let total = 0;
+  for (const g of board) {
+    const res = evaluateGroup(g);
+    if (!res.valid) return { valid: false, total: 0 };
+    total += res.value;
+  }
+  return { valid: true, total };
+}
+
+function computeAddedValue(before, after) {
+  const beforeIds = new Set();
+  before.forEach(g => g.forEach(t => beforeIds.add(t.id)));
+  let sum = 0;
+  after.forEach(g => {
+    const addedIds = new Set(g.filter(t => !beforeIds.has(t.id)).map(t => t.id));
+    if (addedIds.size === 0) return;
+    // 조커는 그 묶음에서 대신하는 실제 숫자만큼 점수가 매겨져야 하므로,
+    // 묶음 전체를 평가해 각 타일이 실제로 어떤 값을 갖는지 구한 뒤
+    // 새로 추가된 타일분만 합산한다.
+    const perTileValue = valuesPerTileInGroup(g);
+    g.forEach((t, i) => { if (addedIds.has(t.id)) sum += perTileValue[i]; });
+  });
+  return sum;
+}
+
+// 묶음(런/그룹) 안의 각 타일이 실제로 갖는 점수값을 배열로 반환.
+// (조커는 대신하는 숫자, 일반 타일은 자신의 숫자)
+function valuesPerTileInGroup(group) {
+  const reals = group.filter(t => !t.joker);
+  if (reals.length === 0) return group.map(() => 0);
+
+  const sameNumber = reals.every(t => t.number === reals[0].number);
+  if (sameNumber && group.length <= 4) {
+    const colorsUsed = new Set(reals.map(t => t.color));
+    if (colorsUsed.size === reals.length) {
+      return group.map(() => reals[0].number);
+    }
+  }
+
+  let leadingJokers = 0;
+  for (const t of group) { if (t.joker) leadingJokers++; else break; }
+  const firstReal = reals[0];
+  let startNumber = firstReal.number - leadingJokers;
+  let cur = startNumber;
+  return group.map(t => { const v = cur; cur++; return v; });
+}
+
+// 이번 턴이 시작되기 "이전부터" 보드에 있던(이미 확정된) 타일인지 판별.
+// snapshot이 없으면 이번 턴에 아직 아무것도 바꾸지 않은 상태이므로 현재 보드 전체가 확정 타일.
+function isLockedTile(snapshot, currentBoard, tileId) {
+  const source = snapshot || currentBoard;
+  return source.some(g => g.some(t => t.id === tileId));
+}
+
+// 드롭/추가로 묶음의 타일 구성이 바뀌었을 때, 그룹(같은 숫자)·런(같은 색 연속 숫자) 형태에 맞게
+// 자동으로 순서를 정리한다. 조커는 런의 빈 칸을 채우도록 배치한다.
+function autoArrangeGroup(tiles) {
+  if (tiles.length <= 1) return tiles.slice();
+  const reals = tiles.filter(t => !t.joker);
+  const jokers = tiles.filter(t => t.joker);
+  if (reals.length === 0) return tiles.slice();
+
+  const sameNumber = reals.every(t => t.number === reals[0].number);
+  const sameColor = reals.every(t => t.color === reals[0].color);
+
+  if (sameNumber && !sameColor) {
+    const colorOrder = ["red", "blue", "yellow", "black"];
+    const sortedReals = reals.slice().sort((a, b) => colorOrder.indexOf(a.color) - colorOrder.indexOf(b.color));
+    return sortedReals.concat(jokers);
+  }
+
+  if (sameColor) {
+    const sortedReals = reals.slice().sort((a, b) => a.number - b.number);
+    const result = [sortedReals[0]];
+    let ji = 0;
+    for (let i = 1; i < sortedReals.length; i++) {
+      let gap = sortedReals[i].number - sortedReals[i - 1].number - 1;
+      while (gap > 0 && ji < jokers.length) { result.push(jokers[ji++]); gap--; }
+      result.push(sortedReals[i]);
+    }
+    while (ji < jokers.length) result.push(jokers[ji++]);
+    return result;
+  }
+
+  return reals.slice().sort((a, b) => a.number - b.number).concat(jokers);
+}
+
+// ============ 간단 AI ============
+// 손패에서 만들 수 있는 모든 유효한 세트(그룹/런) 후보를 idxSet(hand 인덱스 배열, 조커 포함)으로 나열
+function enumerateCandidateSets(hand) {
+  const candidates = [];
+  const byNumber = {}, byColor = {};
+  const jokerIdxs = [];
+  hand.forEach((t, i) => {
+    if (t.joker) { jokerIdxs.push(i); return; }
+    (byNumber[t.number] = byNumber[t.number] || []).push(i);
+    (byColor[t.color] = byColor[t.color] || []).push(i);
+  });
+
+  // ---- 같은 숫자 다른 색 그룹 (3~4장, 조커로 보강 가능) ----
+  for (const num in byNumber) {
+    const idxs = byNumber[num];
+    const byColorAtNum = {};
+    idxs.forEach(i => { if (!(hand[i].color in byColorAtNum)) byColorAtNum[hand[i].color] = i; });
+    const colorsAvail = Object.keys(byColorAtNum);
+    const maxPossible = Math.min(4, colorsAvail.length + jokerIdxs.length);
+    if (maxPossible < 3) continue;
+    for (let size = 3; size <= maxPossible; size++) {
+      const realCount = Math.min(size, colorsAvail.length);
+      const jokerCount = size - realCount;
+      if (jokerCount > jokerIdxs.length || jokerCount < 0) continue;
+      const realIdxs = colorsAvail.slice(0, realCount).map(c => byColorAtNum[c]);
+      const usedJokers = jokerIdxs.slice(0, jokerCount);
+      candidates.push({ idxSet: realIdxs.concat(usedJokers), type: 'group' });
+    }
+  }
+
+  // ---- 같은 색 연속 런 (조커로 빈 칸 보강 가능) ----
+  for (const color in byColor) {
+    const numToIdx = {};
+    byColor[color].forEach(i => { numToIdx[hand[i].number] = i; }); // 같은 색 같은 숫자 중복은 하나만 사용
+    const presentNums = Object.keys(numToIdx).map(Number).sort((a, b) => a - b);
+    const presentSet = new Set(presentNums);
+
+    // 모든 (start, end) 구간(1~13 범위)에서 "보유한 숫자만 사용, 빈 슬롯은 조커로" 가능한지 확인
+    for (let start = 1; start <= 13; start++) {
+      if (!presentSet.has(start)) continue; // 구간 시작은 실제 타일이 있어야 의미있음(조커로만 시작 안함, 후보 중복 방지)
+      let jokersUsed = 0;
+      const idxSet = [];
+      for (let end = start; end <= 13; end++) {
+        if (presentSet.has(end)) {
+          idxSet.push(numToIdx[end]);
+        } else {
+          jokersUsed++;
+          if (jokersUsed > jokerIdxs.length) break;
+        }
+        const length = end - start + 1;
+        if (length >= 3 && (idxSet.length + jokersUsed) === length) {
+          // 유효한 구간: 실제 보유 타일 수 + 사용한 조커 수 == 구간 길이
+          const usedJokerIdxs = jokerIdxs.slice(0, jokersUsed);
+          candidates.push({ idxSet: idxSet.concat(usedJokerIdxs), type: 'run', start, end });
+        }
+      }
+    }
+  }
+
+  return candidates;
+}
+
+// 후보(idxSet, type)를 실제 보드에 놓을 타일 배열(올바른 순서)로 변환
+function materializeCandidate(hand, cand) {
+  if (cand.type === 'group') {
+    const tiles = cand.idxSet.map(i => hand[i]);
+    // 조커를 맨 뒤로 (그룹은 순서 무관하지만 일관성 위해)
+    return tiles.slice().sort((a, b) => (a.joker ? 1 : 0) - (b.joker ? 1 : 0));
+  }
+  // run: start~end 숫자 순서대로 배치, 빈 자리는 조커로 채움
+  const realByNum = {};
+  cand.idxSet.forEach(i => {
+    const t = hand[i];
+    if (!t.joker) realByNum[t.number] = t;
+  });
+  const jokerTiles = cand.idxSet.map(i => hand[i]).filter(t => t.joker);
+  let ji = 0;
+  const result = [];
+  for (let n = cand.start; n <= cand.end; n++) {
+    if (realByNum[n]) result.push(realByNum[n]);
+    else result.push(jokerTiles[ji++]);
+  }
+  return result;
+}
+
+// 그리디로 손패에서 낼 묶음들을 찾음: 가치가 큰 후보부터 충돌 없이 채택
+function findBestMoves(hand) {
+  const candidates = enumerateCandidateSets(hand);
+  const materialized = candidates.map(c => materializeCandidate(hand, c));
+
+  const scored = materialized.map((tiles, idx) => ({
+    tiles,
+    idxSet: candidates[idx].idxSet,
+    value: evaluateGroup(tiles).value,
+    size: tiles.length,
+  })).filter(c => evaluateGroup(c.tiles).valid); // 안전 재검증: invalid는 절대 통과 못함
+
+  // 가치 내림차순, 동률이면 더 많은 타일을 비우는 쪽 우선
+  scored.sort((a, b) => (b.value - a.value) || (b.size - a.size));
+
+  const usedHandIdx = new Set();
+  const moves = [];
+
+  for (const cand of scored) {
+    if (cand.idxSet.some(i => usedHandIdx.has(i))) continue;
+    cand.idxSet.forEach(i => usedHandIdx.add(i));
+    moves.push(cand.tiles);
+  }
+
+  const usedIds = new Set();
+  moves.forEach(m => m.forEach(t => usedIds.add(t.id)));
+  return { moves, usedIds };
+}
+
+// 손패의 남은 타일들을 보드의 기존 그룹에 이어붙일 수 있는지 시도 (그룹 확장)
+// board: 그룹 배열, hand: 시도할 타일 배열 -> { changed, board, remainingHand }
+function tryExtendBoardGroups(board, hand) {
+  let newBoard = board.map(g => g.slice());
+  let remainingHand = hand.slice();
+  let changed = false;
+  let progress = true;
+
+  while (progress) {
+    progress = false;
+    for (let gi = 0; gi < newBoard.length; gi++) {
+      for (let hi = 0; hi < remainingHand.length; hi++) {
+        const tile = remainingHand[hi];
+        const candidate = newBoard[gi].concat([tile]);
+        if (evaluateGroup(candidate).valid) {
+          newBoard[gi] = candidate;
+          remainingHand.splice(hi, 1);
+          changed = true;
+          progress = true;
+          break;
+        }
+        // 그룹 앞쪽에 붙이는 경우도 시도 (런의 시작 확장)
+        const candidateFront = [tile].concat(newBoard[gi]);
+        if (evaluateGroup(candidateFront).valid) {
+          newBoard[gi] = candidateFront;
+          remainingHand.splice(hi, 1);
+          changed = true;
+          progress = true;
+          break;
+        }
+      }
+      if (progress) break;
+    }
+  }
+
+  return { changed, board: newBoard, remainingHand };
+}
+
+// ============ DOM 헬퍼 ============
+function h(tag, attrs, children) {
+  const el = document.createElement(tag);
+  attrs = attrs || {};
+  for (const k in attrs) {
+    if (k === "class") el.className = attrs[k];
+    else if (k === "text") el.textContent = attrs[k];
+    else if (k === "html") el.innerHTML = attrs[k];
+    else if (k.startsWith("on") && typeof attrs[k] === "function") {
+      el.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+    } else if (k === "disabled") {
+      if (attrs[k]) el.setAttribute("disabled", "");
+    } else if (k === "style" && typeof attrs[k] === "object") {
+      Object.assign(el.style, attrs[k]);
+    } else {
+      el.setAttribute(k, attrs[k]);
+    }
+  }
+  (children || []).forEach(c => {
+    if (c == null) return;
+    if (typeof c === "string") el.appendChild(document.createTextNode(c));
+    else el.appendChild(c);
+  });
+  return el;
+}
+
+// ============ 포인터 기반 드래그앤드롭 (롱프레스=드래그, 탭=선택) ============
+let activeDrag = null;
+const DRAG_THRESHOLD = 8;
+const LONG_PRESS_MS = 350; // ms before drag starts on mobile
+
+function findDropZone(x, y) {
+  const target = document.elementFromPoint(x, y);
+  if (!target) return null;
+  return target.closest(".group-row, .new-group-drop, .hand-area");
+}
+
+function makeDraggableTile(el, tileId, onTap) {
+  el.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const pointerId = e.pointerId;
+    const startX = e.clientX, startY = e.clientY;
+    let curX = startX, curY = startY;
+    const rect0 = el.getBoundingClientRect();
+    const offsetX = startX - rect0.left, offsetY = startY - rect0.top;
+
+    let wasDragging = false;
+    let ghost = null;
+    let longPressTimer = null;
+    let dragEnabled = (e.pointerType === "mouse");
+
+    function createGhost(px, py) {
+      ghost = el.cloneNode(true);
+      ghost.style.cssText = "position:fixed;margin:0;z-index:999;pointer-events:none;opacity:0.92;" +
+        "box-shadow:0 8px 24px rgba(0,0,0,.5);transform:scale(1.12);transition:none;" +
+        "left:" + (px - offsetX) + "px;top:" + (py - offsetY) + "px";
+      ghost.classList.remove("selected");
+      document.body.appendChild(ghost);
+      el.classList.add("dragging");
+    }
+
+    function moveGhost(px, py) {
+      if (!ghost) return;
+      ghost.style.left = (px - offsetX) + "px";
+      ghost.style.top  = (py - offsetY) + "px";
+    }
+
+    function updateZone(px, py) {
+      if (!activeDrag) return;
+      const zone = findDropZone(px, py);
+      if (zone !== activeDrag.lastZone) {
+        if (activeDrag.lastZone) activeDrag.lastZone.classList.remove("drag-over");
+        if (zone) zone.classList.add("drag-over");
+        activeDrag.lastZone = zone;
+      }
+    }
+
+    function onMove(ev) {
+      if (ev.pointerId !== pointerId) return;
+      curX = ev.clientX; curY = ev.clientY;
+      const dist = Math.hypot(curX - startX, curY - startY);
+
+      if (!wasDragging) {
+        if (!dragEnabled) {
+          if (dist > DRAG_THRESHOLD) {
+            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+            cleanup(); return;
+          }
+          return;
+        }
+        if (dist < DRAG_THRESHOLD) return;
+        wasDragging = true;
+        createGhost(curX, curY);
+      }
+
+      moveGhost(curX, curY);
+      updateZone(curX, curY);
+    }
+
+    function cleanup() {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      el.classList.remove("dragging");
+      if (ghost) { ghost.remove(); ghost = null; }
+    }
+
+    function onUp(ev) {
+      if (ev.pointerId !== pointerId) return;
+      const didDrag = wasDragging;
+      const zone = activeDrag ? activeDrag.lastZone : null;
+      cleanup();
+      if (zone) zone.classList.remove("drag-over");
+      activeDrag = null;
+      if (didDrag) {
+        if (zone && zone._dropHandler) zone._dropHandler(tileId);
+      } else {
+        if (onTap) onTap();
+      }
+    }
+
+    function onCancel(ev) {
+      if (ev.pointerId !== pointerId) return;
+      if (activeDrag && activeDrag.lastZone) activeDrag.lastZone.classList.remove("drag-over");
+      cleanup();
+      activeDrag = null;
+    }
+
+    activeDrag = { tileId, lastZone: null };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+
+    if (e.pointerType !== "mouse") {
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        if (!wasDragging) {
+          dragEnabled = true;
+          wasDragging = true;
+          createGhost(curX, curY);
+          updateZone(curX, curY);
+          if (navigator.vibrate) navigator.vibrate(40);
+        }
+      }, LONG_PRESS_MS);
+    }
+  });
+}
+
+function tileEl(tile, opts) {
+  opts = opts || {};
+  const color = tile.joker ? "#8B4FB3" : COLOR_HEX[tile.color];
+  const classes = ["tile"];
+  if (opts.small) classes.push("small");
+  if (opts.selected) classes.push("selected");
+
+  const tile_el = h("div", {
+    class: classes.join(" "),
+    style: { color }
+  }, [tile.joker ? "★" : String(tile.number)]);
+
+  if (opts.draggable) {
+    makeDraggableTile(tile_el, tile.id, opts.onClick);
+  } else if (opts.onClick) {
+    tile_el.addEventListener("click", opts.onClick);
+  }
+
+  if (opts.orderNum != null) {
+    const wrap = h("div", { class: "tile-wrap" });
+    wrap.appendChild(tile_el);
+    wrap.appendChild(h("div", { class: "order-badge" }, [String(opts.orderNum)]));
+    return wrap;
+  }
+  return tile_el;
+}
+
+function btn(label, cls, onClick, disabled) {
+  return h("button", {
+    class: "btn " + cls,
+    onClick: disabled ? null : onClick,
+    disabled: !!disabled
+  }, [label]);
+}
+
+// ============ 앱 상태 / 라우터 ============
+const App = document.getElementById("app");
+let state = { screen: "lobby" };
+
+function render() {
+  clearTurnTimer();
+  boardCanvasEl = null; // reset board canvas ref
+  App.innerHTML = "";
+  if (state.screen === "lobby") App.appendChild(renderLobby());
+  else if (state.screen === "ai") App.appendChild(renderAIGame());
+  else if (state.screen === "local") App.appendChild(renderLocalGame());
+  else if (state.screen === "online") App.appendChild(renderOnlineGame());
+}
+
+function goLobby() {
+  teardownOnlineConnection();
+  state = { screen: "lobby" };
+  render();
+}
+
+// ============ 로비 ============
+function renderLobby() {
+  const wrap = h("div", { class: "screen center-screen" });
+  wrap.appendChild(h("div", { class: "logo" }, ["루미큐브 ", h("span", { class: "accent" }, ["RUMMIKUB"])]));
+  wrap.appendChild(h("div", { class: "subtitle" }, ["AI와 대전하거나, 같은 화면 또는 온라인으로 친구와 플레이하세요"]));
+
+  const box = h("div", { class: "lobby-box" });
+
+  // 턴 제한 시간 설정
+  const settingsCard = h("div", { class: "mode-card" });
+  settingsCard.appendChild(h("div", { class: "mode-card-title" }, ["⏱ 턴 제한 시간"]));
+  settingsCard.appendChild(h("div", { class: "mode-card-desc" }, [
+    "제한 시간 안에 턴을 끝내지 못하면 자동으로 타일을 한 장 더 가져오고 다음 차례로 넘어갑니다."
+  ]));
+  const timeSelect = h("select", { class: "text-input" });
+  [[0, "무제한"], [30, "30초"], [60, "60초 (기본)"], [90, "90초"], [120, "120초"]].forEach(([val, label]) => {
+    const opt = h("option", { value: String(val) }, [label]);
+    if (val === turnTimeSeconds) opt.setAttribute("selected", "");
+    timeSelect.appendChild(opt);
+  });
+  timeSelect.addEventListener("change", () => {
+    turnTimeSeconds = parseInt(timeSelect.value, 10);
+  });
+  settingsCard.appendChild(timeSelect);
+  box.appendChild(settingsCard);
+
+  // AI 대전
+  const aiCard = h("div", { class: "mode-card" });
+  aiCard.appendChild(h("div", { class: "mode-card-title" }, ["🤖 AI와 대전"]));
+  aiCard.appendChild(h("div", { class: "mode-card-desc" }, ["혼자서 AI를 상대로 플레이합니다."]));
+  aiCard.appendChild(btn("AI 대전 시작", "btn-green btn-big", () => {
+    state = { screen: "ai" };
+    render();
+  }));
+  box.appendChild(aiCard);
+
+  // 로컬 2인용
+  const localCard = h("div", { class: "mode-card" });
+  localCard.appendChild(h("div", { class: "mode-card-title" }, ["👥 로컬 2인 대전"]));
+  localCard.appendChild(h("div", { class: "mode-card-desc" }, [
+    "같은 화면에서 한 명씩 번갈아 둡니다. 턴이 바뀌면 화면을 가리고 다음 사람에게 넘겨주세요."
+  ]));
+
+  const nameRow = h("div", { style: { display: "flex", gap: "8px", marginBottom: "10px" } });
+  const p1Input = h("input", { class: "text-input", placeholder: "플레이어 1 이름" });
+  const p2Input = h("input", { class: "text-input", placeholder: "플레이어 2 이름" });
+  nameRow.appendChild(p1Input);
+  nameRow.appendChild(p2Input);
+  localCard.appendChild(nameRow);
+
+  localCard.appendChild(btn("로컬 대전 시작", "btn-blue btn-big", () => {
+    const n1 = p1Input.value.trim() || "플레이어 1";
+    const n2 = p2Input.value.trim() || "플레이어 2";
+    state = { screen: "local", names: [n1, n2] };
+    render();
+  }));
+  box.appendChild(localCard);
+
+  // 온라인 1:1 대전
+  const onlineCard = h("div", { class: "mode-card" });
+  onlineCard.appendChild(h("div", { class: "mode-card-title" }, ["🌐 온라인 1:1 대전"]));
+  onlineCard.appendChild(h("div", { class: "mode-card-desc" }, [
+    "방을 만들어 코드를 친구에게 공유하거나, 받은 코드로 친구 방에 들어가세요. 같은 와이파이가 아니어도 됩니다."
+  ]));
+
+  const myNameInput = h("input", { class: "text-input", placeholder: "내 닉네임" });
+  onlineCard.appendChild(h("div", { style: { marginBottom: "10px" } }, [myNameInput]));
+
+  const onlineRow = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } });
+  onlineRow.appendChild(btn("방 만들기 (호스트)", "btn-green", () => {
+    const myName = myNameInput.value.trim() || "나";
+    state = { screen: "online", role: "host", myName };
+    render();
+  }));
+  const joinCodeInput = h("input", { class: "text-input", placeholder: "받은 방 코드 입력", style: { flex: "1 1 140px" } });
+  onlineRow.appendChild(joinCodeInput);
+  onlineRow.appendChild(btn("방 참가하기", "btn-blue", () => {
+    const myName = myNameInput.value.trim() || "나";
+    const code = joinCodeInput.value.trim();
+    if (!code) { toast("방 코드를 입력해주세요."); return; }
+    state = { screen: "online", role: "guest", myName, joinCode: code };
+    render();
+  }));
+  onlineCard.appendChild(onlineRow);
+  box.appendChild(onlineCard);
+
+  wrap.appendChild(box);
+  return wrap;
+}
+
+// ============ 공통 게임 셸 빌더 ============
+function buildGameShell(opts) {
+  const wrap = h("div", { class: "screen" });
+  const selectedSet = new Set(opts.selectedOrder);
+
+  const header = h("div", { class: "game-header" });
+  const headerLeft = h("div", {});
+  headerLeft.appendChild(h("div", { class: "game-title" }, [opts.title]));
+  headerLeft.appendChild(h("div", { class: "game-subtitle" }, [opts.subtitle]));
+  header.appendChild(headerLeft);
+
+  const headerRight = h("div", { class: "header-right" });
+  if (opts.timerEl) headerRight.appendChild(opts.timerEl);
+  // Board zoom controls (pan/zoom of board canvas)
+  headerRight.appendChild(buildBoardZoomControls());
+  // Tile size zoom
+  headerRight.appendChild(buildZoomControls());
+  headerRight.appendChild(btn("나가기", "btn-purple", opts.onExit));
+  header.appendChild(headerRight);
+
+  wrap.appendChild(header);
+
+  const msgBar = h("div", { class: "message-bar" + (opts.tone === "wait" ? " tone-wait" : "") });
+  msgBar.appendChild(h("span", { class: "dot" + (opts.tone === "wait" ? " wait" : "") }));
+  msgBar.appendChild(document.createTextNode(opts.message));
+  if (!opts.boardValid) {
+    msgBar.appendChild(h("span", { class: "warn-text" }, ["⚠ 유효하지 않은 묶음이 있습니다"]));
+  }
+  // Pan hint
+  const panHint = h("span", { style: { fontSize: "11px", opacity: "0.5", marginLeft: "auto" } },
+    ["핀치/휠로 줌 · 2손가락으로 패닝"]);
+  msgBar.appendChild(panHint);
+  wrap.appendChild(msgBar);
+
+  // Board area with pannable/zoomable canvas
+  const boardArea = h("div", { class: "board-area" });
+  const boardCanvas = h("div", { class: "board-canvas" });
+
+  if (opts.board.length === 0) {
+    boardCanvas.appendChild(h("div", { class: "board-empty" }, ["보드가 비어있습니다"]));
+  } else {
+    opts.board.forEach((group, gi) => {
+      const valid = evaluateGroup(group).valid;
+      const row = h("div", { class: "group-row" + (valid ? "" : " invalid") });
+      if (opts.canInteract) row._dropHandler = (tileId) => opts.onDropToGroup(gi, tileId);
+      group.forEach((tile, ti) => {
+        row.appendChild(tileEl(tile, {
+          onClick: () => opts.onReturnTile(gi, ti),
+          draggable: opts.canInteract,
+        }));
+      });
+      if (selectedSet.size > 0 && opts.canInteract) {
+        row.appendChild(btn("+ 추가 (" + selectedSet.size + ")", "btn-blue add-here-btn", () => opts.onAddToGroup(gi)));
+      }
+      boardCanvas.appendChild(row);
+    });
+  }
+
+  if (opts.canInteract) {
+    const newGroupDrop = h("div", { class: "new-group-drop" }, ["+ 여기로 드래그하면 새 묶음이 됩니다"]);
+    newGroupDrop._dropHandler = (tileId) => opts.onDropToNewGroup(tileId);
+    boardCanvas.appendChild(newGroupDrop);
+  }
+
+  boardArea.appendChild(boardCanvas);
+  attachBoardPanZoom(boardArea, boardCanvas);
+  wrap.appendChild(boardArea);
+
+  const controlBar = h("div", { class: "control-bar" });
+  opts.controlsEls.forEach(c => controlBar.appendChild(c));
+  wrap.appendChild(controlBar);
+
+  const handArea = h("div", { class: "hand-area" });
+  if (opts.canInteract) handArea._dropHandler = (tileId) => opts.onDropToHand(tileId);
+  const labelRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: "0", marginBottom: "4px" } });
+  labelRow.appendChild(h("div", { class: "hand-label" }, ["내 손패 (" + opts.hand.length + "개) · 탭=선택 · 길게누름=드래그"]));
+  if (opts.onSortHand) {
+    const sortBtn = h("button", {
+      class: "btn btn-yellow",
+      style: { padding: "5px 12px", fontSize: "12px", flexShrink: "0", fontWeight: "700" },
+      onClick: opts.onSortHand
+    }, ["🔢 정렬"]);
+    labelRow.appendChild(sortBtn);
+  }
+  handArea.appendChild(labelRow);
+
+  // Auto-scale hand tiles to fit screen width using CSS zoom
+  const handTiles = h("div", { class: "hand-tiles" });
+  if (opts.canInteract) {
+    handTiles._dropHandler = (tileId) => opts.onDropToHand(tileId);
+  }
+
+  opts.hand.forEach(tile => {
+    const orderIdx = opts.selectedOrder.indexOf(tile.id);
+    const tileWrapper = tileEl(tile, {
+      selected: orderIdx !== -1,
+      orderNum: orderIdx !== -1 && opts.selectedOrder.length > 1 ? orderIdx + 1 : null,
+      onClick: () => { if (opts.canInteract) opts.onToggleSelect(tile.id); },
+      draggable: opts.canInteract,
+    });
+    handTiles.appendChild(tileWrapper);
+  });
+  handArea.appendChild(handTiles);
+
+  // After DOM insertion, apply zoom to fit all tiles in one row
+  requestAnimationFrame(() => {
+    const availW = handArea.offsetWidth - 28;
+    const isMobile = window.innerWidth <= 480;
+    const baseTileW = (isMobile ? 38 : 32) * zoomLevel;
+    const baseGap = 4;
+    const count = opts.hand.length;
+    if (count > 0 && availW > 0) {
+      const needed = count * baseTileW + (count - 1) * baseGap;
+      if (needed > availW) {
+        const scale = Math.max(0.42, availW / needed);
+        handTiles.style.zoom = scale.toFixed(3);
+      } else {
+        handTiles.style.zoom = "";
+      }
+    }
+  });
+
+  wrap.appendChild(handArea);
+
+  if (opts.winnerOverlayEl) wrap.appendChild(opts.winnerOverlayEl);
+  return wrap;
+}
+
+function winnerOverlay(emoji, title, onPlayAgain, onExit) {
+  const box = h("div", { class: "overlay-box" });
+  box.appendChild(h("div", { class: "overlay-emoji" }, [emoji]));
+  box.appendChild(h("div", { class: "overlay-title" }, [title]));
+  const actions = h("div", { class: "overlay-actions" });
+  if (onPlayAgain) actions.appendChild(btn("다시 하기", "btn-yellow", onPlayAgain));
+  actions.appendChild(btn("로비로", "btn-purple", onExit));
+  box.appendChild(actions);
+  const overlay = h("div", { class: "overlay" }, [box]);
+  return overlay;
+}
+
+function toast(msg) {
+  const existing = document.querySelector(".toast");
+  if (existing) existing.remove();
+  const el = h("div", { class: "toast", onClick: () => el.remove() }, [msg + " (탭하여 닫기)"]);
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.remove(); }, 4000);
+}
+
+// ============ AI 대전 모드 ============
+let aiState = null;
+
+function sortTiles(tiles) {
+  return tiles.slice().sort((a, b) => {
+    if (a.joker !== b.joker) return a.joker ? 1 : -1;
+    return a.color.localeCompare(b.color) || a.number - b.number;
+  });
+}
+
+function newAIState() {
+  const deck = shuffle(createDeck());
+  return {
+    pool: deck.slice(28),
+    hand: sortTiles(deck.slice(0, 14)),
+    aiHand: deck.slice(14, 28),
+    board: [],
+    snapshot: null,
+    snapshotHand: null,
+    hasPlayedInitial: false,
+    aiHasPlayedInitial: false,
+    turn: "player", // player | ai
+    turnDeadline: newTurnDeadline(),
+    selectedOrder: [],
+    message: "당신의 차례입니다. 타일을 탭하거나 드래그해서 보드에 놓으세요.",
+    winner: null
+  };
+}
+
+function renderAIGame() {
+  if (!aiState) aiState = newAIState();
+  const s = aiState;
+
+  function ensureSnapshot() {
+    if (s.snapshot === null) {
+      s.snapshot = s.board.map(g => g.map(t => Object.assign({}, t)));
+      s.snapshotHand = s.hand.map(t => Object.assign({}, t));
+    }
+  }
+
+  function toggleSelect(id) {
+    if (s.turn !== "player" || s.winner) return;
+    const idx = s.selectedOrder.indexOf(id);
+    if (idx !== -1) s.selectedOrder.splice(idx, 1);
+    else s.selectedOrder.push(id);
+    render();
+  }
+
+  function takeSelectedFromHand() {
+    // selectedOrder 순서를 보존하며 손패에서 추출
+    const tiles = s.selectedOrder.map(id => s.hand.find(t => t.id === id)).filter(Boolean);
+    s.hand = s.hand.filter(t => !s.selectedOrder.includes(t.id));
+    s.selectedOrder = [];
+    return tiles;
+  }
+
+  function playSelectedAsNewGroup() {
+    if (s.selectedOrder.length === 0) return;
+    ensureSnapshot();
+    const tiles = takeSelectedFromHand();
+    s.board.push(autoArrangeGroup(tiles));
+    render();
+  }
+
+  function addToGroup(gi) {
+    if (s.selectedOrder.length === 0) return;
+    ensureSnapshot();
+    const tiles = takeSelectedFromHand();
+    s.board[gi] = autoArrangeGroup(s.board[gi].concat(tiles));
+    render();
+  }
+
+  function returnTile(gi, ti) {
+    if (s.turn !== "player" || s.winner) return;
+    const tile = s.board[gi][ti];
+    if (isLockedTile(s.snapshot, s.board, tile.id)) {
+      toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
+      return;
+    }
+    ensureSnapshot();
+    s.board[gi].splice(ti, 1);
+    s.board = s.board.filter(g => g.length > 0);
+    s.hand.push(tile);
+    render();
+  }
+
+  function removeTileFromBoardById(tileId) {
+    for (let gi = 0; gi < s.board.length; gi++) {
+      const ti = s.board[gi].findIndex(t => t.id === tileId);
+      if (ti !== -1) {
+        const tile = s.board[gi][ti];
+        s.board[gi].splice(ti, 1);
+        s.board = s.board.filter(g => g.length > 0);
+        return tile;
+      }
+    }
+    return null;
+  }
+
+  function dropToGroup(gi, tileId) {
+    if (s.turn !== "player" || s.winner) return;
+    ensureSnapshot();
+    let tile = null;
+    const inHandIdx = s.hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) {
+      tile = s.hand[inHandIdx];
+      s.hand.splice(inHandIdx, 1);
+      const selIdx = s.selectedOrder.indexOf(tileId);
+      if (selIdx !== -1) s.selectedOrder.splice(selIdx, 1);
+    } else {
+      tile = removeTileFromBoardById(tileId);
+      // gi가 보드 그룹 제거로 밀렸을 수 있으므로 안전 처리는 아래 인덱스 재탐색으로 생략 가능 (단일 그룹 길이 변화 없음)
+    }
+    if (tile) s.board[gi] = autoArrangeGroup(s.board[gi].concat([tile]));
+    render();
+  }
+
+  function dropToNewGroup(tileId) {
+    if (s.turn !== "player" || s.winner) return;
+    ensureSnapshot();
+    let tile = null;
+    const inHandIdx = s.hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) {
+      tile = s.hand[inHandIdx];
+      s.hand.splice(inHandIdx, 1);
+      const selIdx = s.selectedOrder.indexOf(tileId);
+      if (selIdx !== -1) s.selectedOrder.splice(selIdx, 1);
+    } else {
+      tile = removeTileFromBoardById(tileId);
+    }
+    if (tile) s.board.push([tile]);
+    render();
+  }
+
+  function dropToHand(tileId) {
+    if (s.turn !== "player" || s.winner) return;
+    const inHandIdx = s.hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) return; // 이미 손패
+    if (isLockedTile(s.snapshot, s.board, tileId)) {
+      toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
+      return;
+    }
+    ensureSnapshot();
+    const tile = removeTileFromBoardById(tileId);
+    if (tile) s.hand.push(tile);
+    render();
+  }
+
+  function sortHand() {
+    s.hand = sortTiles(s.hand);
+    render();
+  }
+
+  function cancelTurn() {
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hand = s.snapshotHand.map(t => Object.assign({}, t));
+    }
+    s.snapshot = null;
+    s.snapshotHand = null;
+    s.selectedOrder = [];
+    s.message = "이번 턴 변경을 취소했습니다.";
+    render();
+  }
+
+  function drawTile() {
+    if (s.turn !== "player" || s.winner) return;
+    if (s.pool.length === 0) { s.message = "풀이 비었습니다."; render(); return; }
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hand = s.snapshotHand.map(t => Object.assign({}, t));
+      s.snapshot = null; s.snapshotHand = null;
+    }
+    const t = s.pool.shift();
+    s.hand = sortTiles(s.hand.concat([t]));
+    s.message = "타일을 뽑았습니다. AI 차례로 넘어갑니다.";
+    s.turn = "ai";
+    s.selectedOrder = [];
+    render();
+    setTimeout(runAiTurn, 700);
+  }
+
+  function endTurn() {
+    if (s.turn !== "player" || s.winner) return;
+    const evalRes = evaluateBoard(s.board);
+    if (!evalRes.valid) { toast("보드에 유효하지 않은 묶음이 있습니다."); return; }
+    if (!s.hasPlayedInitial) {
+      if (!s.snapshot) { toast("첫 배치는 보드에 타일을 내야 합니다 (합계 30 이상)."); return; }
+      const added = computeAddedValue(s.snapshot, s.board);
+      if (added < 30) { toast("첫 배치는 합계 30 이상이어야 합니다. 현재 추가분: " + added + "점"); return; }
+      s.hasPlayedInitial = true;
+    }
+    if (s.hand.length === 0) {
+      s.winner = "player";
+      render();
+      return;
+    }
+    s.snapshot = null; s.snapshotHand = null;
+    s.message = "AI가 생각 중입니다...";
+    s.turn = "ai";
+    s.selectedOrder = [];
+    render();
+    setTimeout(runAiTurn, 700);
+  }
+
+  function runAiTurn() {
+    const { moves, usedIds } = findBestMoves(s.aiHand);
+    let newBoard = s.board.map(g => g.slice());
+    let remaining = s.aiHand.filter(t => !usedIds.has(t.id));
+    let played = false;
+
+    if (moves.length > 0) {
+      let totalValue = 0;
+      moves.forEach(m => totalValue += evaluateGroup(m).value);
+      if (!s.aiHasPlayedInitial && totalValue < 30) {
+        // 못 냄
+      } else {
+        moves.forEach(m => newBoard.push(m));
+        played = true;
+        if (!s.aiHasPlayedInitial) s.aiHasPlayedInitial = true;
+      }
+    }
+
+    // 첫 배치를 이미 했다면, 새 묶음으로 못 낸 나머지 타일들을 보드의 기존 그룹에 이어붙이기 시도
+    if (s.aiHasPlayedInitial) {
+      const extendResult = tryExtendBoardGroups(newBoard, remaining);
+      if (extendResult.changed) {
+        newBoard = extendResult.board;
+        remaining = extendResult.remainingHand;
+        played = true;
+      }
+    }
+
+    if (played) {
+      s.board = newBoard;
+      s.aiHand = remaining;
+      if (remaining.length === 0) {
+        s.winner = "ai";
+        render();
+        return;
+      }
+      s.message = "AI가 타일을 냈습니다. 당신의 차례입니다.";
+    } else if (s.pool.length > 0) {
+      const drawn = s.pool.shift();
+      s.aiHand = remaining.concat([drawn]);
+      s.message = "AI가 타일을 뽑았습니다. 당신의 차례입니다.";
+    } else {
+      s.message = "풀이 비어 AI가 패스했습니다. 당신의 차례입니다.";
+    }
+    s.selectedOrder = [];
+    s.turn = "player";
+    s.turnDeadline = newTurnDeadline();
+    render();
+  }
+
+  const boardValid = evaluateBoard(s.board).valid;
+
+  const controls = [
+    btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
+      playSelectedAsNewGroup, s.selectedOrder.length === 0 || s.turn !== "player" || !!s.winner),
+    btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || s.turn !== "player" || !!s.winner),
+    btn("타일 뽑기", "btn-purple", drawTile, s.turn !== "player" || !!s.winner),
+    btn("턴 종료 ✓", "btn-yellow", endTurn, s.turn !== "player" || !!s.winner)
+  ];
+
+  let overlayEl = null;
+  if (s.winner) {
+    overlayEl = winnerOverlay(
+      s.winner === "player" ? "🏆" : "🤖",
+      s.winner === "player" ? "승리했습니다! 🎉" : "AI가 승리했습니다",
+      () => { aiState = newAIState(); render(); },
+      goLobby
+    );
+  }
+
+  let timerEl = null;
+  if (s.turn === "player" && !s.winner && s.turnDeadline) {
+    timerEl = buildTimerBadge(s.turnDeadline, () => {
+      toast("시간 초과! 타일을 뽑습니다.");
+      drawTile();
+    });
+  }
+
+  return buildGameShell({
+    title: "루미큐브 · AI 대전",
+    subtitle: "풀 " + s.pool.length + "개 · AI 패 " + s.aiHand.length + "개",
+    message: s.message,
+    tone: s.turn === "ai" ? "wait" : "go",
+    boardValid,
+    board: s.board,
+    hand: s.hand,
+    selectedOrder: s.selectedOrder,
+    onToggleSelect: toggleSelect,
+    onReturnTile: returnTile,
+    onAddToGroup: addToGroup,
+    onDropToGroup: dropToGroup,
+    onDropToNewGroup: dropToNewGroup,
+    onDropToHand: dropToHand,
+    onSortHand: sortHand,
+    canInteract: s.turn === "player" && !s.winner,
+    onExit: goLobby,
+    controlsEls: controls,
+    winnerOverlayEl: overlayEl,
+    timerEl: timerEl
+  });
+}
+
+// ============ 로컬 2인용 모드 ============
+let localState = null;
+
+function newLocalState(names) {
+  const deck = shuffle(createDeck());
+  return {
+    names,
+    pool: deck.slice(28),
+    hands: [sortTiles(deck.slice(0, 14)), sortTiles(deck.slice(14, 28))],
+    board: [],
+    snapshot: null,
+    snapshotHand: null,
+    initialPlayed: [false, false],
+    turn: 0, // 0 or 1
+    turnDeadline: newTurnDeadline(),
+    selectedOrder: [],
+    message: names[0] + "님의 차례입니다.",
+    winner: null,
+    showPassScreen: false
+  };
+}
+
+function renderLocalGame() {
+  if (!localState) localState = newLocalState(state.names || ["플레이어 1", "플레이어 2"]);
+  const s = localState;
+  const other = s.turn === 0 ? 1 : 0;
+
+  if (s.showPassScreen && !s.winner) {
+    return renderPassScreen(s);
+  }
+
+  function ensureSnapshot() {
+    if (s.snapshot === null) {
+      s.snapshot = s.board.map(g => g.map(t => Object.assign({}, t)));
+      s.snapshotHand = s.hands[s.turn].map(t => Object.assign({}, t));
+    }
+  }
+
+  function toggleSelect(id) {
+    if (s.winner) return;
+    const idx = s.selectedOrder.indexOf(id);
+    if (idx !== -1) s.selectedOrder.splice(idx, 1);
+    else s.selectedOrder.push(id);
+    render();
+  }
+
+  function takeSelectedFromHand() {
+    const hand = s.hands[s.turn];
+    const tiles = s.selectedOrder.map(id => hand.find(t => t.id === id)).filter(Boolean);
+    s.hands[s.turn] = hand.filter(t => !s.selectedOrder.includes(t.id));
+    s.selectedOrder = [];
+    return tiles;
+  }
+
+  function playSelectedAsNewGroup() {
+    if (s.selectedOrder.length === 0) return;
+    ensureSnapshot();
+    const tiles = takeSelectedFromHand();
+    s.board.push(autoArrangeGroup(tiles));
+    render();
+  }
+
+  function addToGroup(gi) {
+    if (s.selectedOrder.length === 0) return;
+    ensureSnapshot();
+    const tiles = takeSelectedFromHand();
+    s.board[gi] = autoArrangeGroup(s.board[gi].concat(tiles));
+    render();
+  }
+
+  function returnTile(gi, ti) {
+    if (s.winner) return;
+    const tile = s.board[gi][ti];
+    if (isLockedTile(s.snapshot, s.board, tile.id)) {
+      toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
+      return;
+    }
+    ensureSnapshot();
+    s.board[gi].splice(ti, 1);
+    s.board = s.board.filter(g => g.length > 0);
+    s.hands[s.turn].push(tile);
+    render();
+  }
+
+  function removeTileFromBoardById(tileId) {
+    for (let gi = 0; gi < s.board.length; gi++) {
+      const ti = s.board[gi].findIndex(t => t.id === tileId);
+      if (ti !== -1) {
+        const tile = s.board[gi][ti];
+        s.board[gi].splice(ti, 1);
+        s.board = s.board.filter(g => g.length > 0);
+        return tile;
+      }
+    }
+    return null;
+  }
+
+  function dropToGroup(gi, tileId) {
+    if (s.winner) return;
+    ensureSnapshot();
+    const hand = s.hands[s.turn];
+    let tile = null;
+    const inHandIdx = hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) {
+      tile = hand[inHandIdx];
+      hand.splice(inHandIdx, 1);
+      const selIdx = s.selectedOrder.indexOf(tileId);
+      if (selIdx !== -1) s.selectedOrder.splice(selIdx, 1);
+    } else {
+      tile = removeTileFromBoardById(tileId);
+    }
+    if (tile) s.board[gi] = autoArrangeGroup(s.board[gi].concat([tile]));
+    render();
+  }
+
+  function dropToNewGroup(tileId) {
+    if (s.winner) return;
+    ensureSnapshot();
+    const hand = s.hands[s.turn];
+    let tile = null;
+    const inHandIdx = hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) {
+      tile = hand[inHandIdx];
+      hand.splice(inHandIdx, 1);
+      const selIdx = s.selectedOrder.indexOf(tileId);
+      if (selIdx !== -1) s.selectedOrder.splice(selIdx, 1);
+    } else {
+      tile = removeTileFromBoardById(tileId);
+    }
+    if (tile) s.board.push([tile]);
+    render();
+  }
+
+  function dropToHand(tileId) {
+    if (s.winner) return;
+    const hand = s.hands[s.turn];
+    const inHandIdx = hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) return;
+    if (isLockedTile(s.snapshot, s.board, tileId)) {
+      toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
+      return;
+    }
+    ensureSnapshot();
+    const tile = removeTileFromBoardById(tileId);
+    if (tile) hand.push(tile);
+    render();
+  }
+
+  function sortHand() {
+    s.hands[s.turn] = sortTiles(s.hands[s.turn]);
+    render();
+  }
+
+  function cancelTurn() {
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hands[s.turn] = s.snapshotHand.map(t => Object.assign({}, t));
+    }
+    s.snapshot = null; s.snapshotHand = null;
+    s.selectedOrder = [];
+    s.message = "이번 턴 변경을 취소했습니다.";
+    render();
+  }
+
+  function drawTile() {
+    if (s.winner) return;
+    if (s.pool.length === 0) { toast("풀이 비었습니다."); return; }
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hands[s.turn] = s.snapshotHand.map(t => Object.assign({}, t));
+      s.snapshot = null; s.snapshotHand = null;
+    }
+    const t = s.pool.shift();
+    s.hands[s.turn] = sortTiles(s.hands[s.turn].concat([t]));
+    passTurn(other, s.names[other] + "님의 차례입니다.");
+  }
+
+  function endTurn() {
+    if (s.winner) return;
+    const evalRes = evaluateBoard(s.board);
+    if (!evalRes.valid) { toast("보드에 유효하지 않은 묶음이 있습니다."); return; }
+    if (!s.initialPlayed[s.turn]) {
+      if (!s.snapshot) { toast("첫 배치는 보드에 타일을 내야 합니다 (합계 30 이상)."); return; }
+      const added = computeAddedValue(s.snapshot, s.board);
+      if (added < 30) { toast("첫 배치는 합계 30 이상이어야 합니다. 현재 추가분: " + added + "점"); return; }
+      s.initialPlayed[s.turn] = true;
+    }
+    if (s.hands[s.turn].length === 0) {
+      s.winner = s.turn;
+      s.snapshot = null; s.snapshotHand = null;
+      render();
+      return;
+    }
+    passTurn(other, s.names[other] + "님의 차례입니다.");
+  }
+
+  function passTurn(nextTurn, nextMessage) {
+    s.snapshot = null; s.snapshotHand = null;
+    s.selectedOrder = [];
+    s.turn = nextTurn;
+    s.message = nextMessage;
+    s.showPassScreen = true;
+    render();
+  }
+
+  const boardValid = evaluateBoard(s.board).valid;
+  const hand = s.hands[s.turn];
+
+  const controls = [
+    btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
+      playSelectedAsNewGroup, s.selectedOrder.length === 0 || !!s.winner),
+    btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !!s.winner),
+    btn("타일 뽑기", "btn-purple", drawTile, !!s.winner),
+    btn("턴 종료 ✓", "btn-yellow", endTurn, !!s.winner)
+  ];
+
+  let overlayEl = null;
+  if (s.winner !== null) {
+    overlayEl = winnerOverlay(
+      "🏆",
+      s.names[s.winner] + "님이 승리했습니다! 🎉",
+      () => { localState = newLocalState(s.names); render(); },
+      goLobby
+    );
+  }
+
+  let timerEl = null;
+  if (!s.winner && s.turnDeadline) {
+    timerEl = buildTimerBadge(s.turnDeadline, () => {
+      toast("시간 초과! 타일을 뽑습니다.");
+      drawTile();
+    });
+  }
+
+  return buildGameShell({
+    title: "루미큐브 · 로컬 2인 대전",
+    subtitle: "지금 차례: " + s.names[s.turn] + " · 풀 " + s.pool.length + "개 · 상대 패 " + s.hands[other].length + "개",
+    message: s.message,
+    tone: "go",
+    boardValid,
+    board: s.board,
+    hand,
+    selectedOrder: s.selectedOrder,
+    onToggleSelect: toggleSelect,
+    onReturnTile: returnTile,
+    onAddToGroup: addToGroup,
+    onDropToGroup: dropToGroup,
+    onDropToNewGroup: dropToNewGroup,
+    onDropToHand: dropToHand,
+    onSortHand: sortHand,
+    canInteract: !s.winner,
+    onExit: goLobby,
+    controlsEls: controls,
+    winnerOverlayEl: overlayEl,
+    timerEl: timerEl
+  });
+}
+
+// ============ 온라인 1:1 대전 모드 ============
+// PeerJS의 무료 공개 클라우드 시그널링 서버를 이용한 WebRTC P2P 연결.
+// 호스트가 게임 상태의 "원본"을 들고, 매 액션마다 전체 상태를 상대에게 전송한다.
+let onlinePeer = null;
+let onlineConn = null;
+let onlineState = null; // { role, myName, peerName, peerId, status, ...게임필드 }
+
+function teardownOnlineConnection() {
+  if (onlineConn) { try { onlineConn.close(); } catch (e) {} onlineConn = null; }
+  if (onlinePeer) { try { onlinePeer.destroy(); } catch (e) {} onlinePeer = null; }
+  onlineState = null;
+}
+
+function shortRoomCode() {
+  // PeerJS id는 영문/숫자만 권장. 사람이 읽기 쉬운 6자리 코드를 생성.
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let s = "";
+  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+function sendOnline(msg) {
+  if (onlineConn && onlineConn.open) {
+    try { onlineConn.send(msg); } catch (e) {}
+  }
+}
+
+function newOnlineGameState(names, mySeat) {
+  const deck = shuffle(createDeck());
+  return {
+    names, // [host이름, guest이름]
+    mySeat, // 0(host) 또는 1(guest) - 내가 어느 자리인지
+    pool: deck.slice(28),
+    hands: [sortTiles(deck.slice(0, 14)), sortTiles(deck.slice(14, 28))],
+    board: [],
+    snapshot: null,
+    snapshotHand: null,
+    initialPlayed: [false, false],
+    turn: 0,
+    turnDeadline: newTurnDeadline(),
+    selectedOrder: [],
+    message: names[0] + "님의 차례입니다.",
+    winner: null
+  };
+}
+
+// 상대에게 보낼 때는 내 손패만 숨기지 않고 전체를 보내되,
+// 받는 쪽 클라이언트가 자기 hands 배열에서 "내 손패"만 그대로 보고
+// 상대 손패는 개수만 쓰도록 렌더링 단계에서 처리한다 (간단한 신뢰 기반 동기화).
+function broadcastOnlineState() {
+  const s = onlineState;
+  if (!s) return;
+  sendOnline({
+    type: "state",
+    payload: {
+      names: s.names,
+      pool: s.pool,
+      hands: s.hands,
+      board: s.board,
+      initialPlayed: s.initialPlayed,
+      turn: s.turn,
+      turnDeadline: s.turnDeadline,
+      message: s.message,
+      winner: s.winner
+    }
+  });
+}
+
+function applyRemoteState(payload) {
+  const s = onlineState;
+  if (!s) return;
+  s.names = payload.names;
+  s.pool = payload.pool;
+  s.hands = payload.hands;
+  s.board = payload.board;
+  s.initialPlayed = payload.initialPlayed;
+  s.turn = payload.turn;
+  s.turnDeadline = payload.turnDeadline;
+  s.message = payload.message;
+  s.winner = payload.winner;
+  s.snapshot = null;
+  s.snapshotHand = null;
+  s.selectedOrder = [];
+  render();
+}
+
+function setupHostConnectionHandlers(conn, code) {
+  onlineConn = conn;
+  conn.on("open", () => {
+    onlineState.status = "playing";
+    sendOnline({ type: "hello", payload: { name: onlineState.myName } });
+    render();
+  });
+  conn.on("data", (msg) => handleOnlineMessage(msg));
+  conn.on("close", () => {
+    if (onlineState) { onlineState.status = "disconnected"; render(); }
+  });
+}
+
+function handleOnlineMessage(msg) {
+  if (!msg || !msg.type) return;
+  if (msg.type === "hello") {
+    if (onlineState) onlineState.peerName = msg.payload.name;
+    if (onlineState && onlineState.mySeat === 0 && !onlineState.board) {
+      // 호스트: 상대 이름을 받았으니 게임 시작 상태를 만들어 전송 (최초 1회만)
+      const names = [onlineState.myName, msg.payload.name];
+      onlineState = Object.assign(newOnlineGameState(names, 0), {
+        role: "host", myName: onlineState.myName, peerName: msg.payload.name, status: "playing"
+      });
+      broadcastOnlineState();
+      render();
+    }
+  } else if (msg.type === "state") {
+    applyRemoteState(msg.payload);
+  } else if (msg.type === "toast") {
+    toast(msg.payload);
+  }
+}
+
+function renderOnlineGame() {
+  const cfg = state; // { role, myName, joinCode? }
+
+  if (!onlineState) {
+    onlineState = {
+      role: cfg.role,
+      myName: cfg.myName,
+      mySeat: cfg.role === "host" ? 0 : 1,
+      status: "connecting",
+      peerName: null,
+      myCode: null
+    };
+
+    if (!onlinePeer) {
+      if (cfg.role === "host") {
+        const code = shortRoomCode();
+        onlineState.myCode = code;
+        onlinePeer = new Peer("rmk-" + code);
+        onlinePeer.on("open", () => { render(); });
+        onlinePeer.on("connection", (conn) => setupHostConnectionHandlers(conn, code));
+        onlinePeer.on("error", (err) => {
+          onlineState.status = "error";
+          onlineState.errorMsg = (err && err.type) || "연결 오류";
+          render();
+        });
+      } else {
+        onlinePeer = new Peer();
+        onlinePeer.on("open", () => {
+          const targetId = "rmk-" + cfg.joinCode.trim().toUpperCase();
+          const conn = onlinePeer.connect(targetId, { reliable: true });
+          onlineConn = conn;
+          conn.on("open", () => {
+            onlineState.status = "playing";
+            sendOnline({ type: "hello", payload: { name: onlineState.myName } });
+            render();
+          });
+          conn.on("data", (msg) => handleOnlineMessage(msg));
+          conn.on("close", () => {
+            if (onlineState) { onlineState.status = "disconnected"; render(); }
+          });
+          render();
+        });
+        onlinePeer.on("error", (err) => {
+          onlineState.status = "error";
+          onlineState.errorMsg = (err && err.type) || "연결 오류";
+          render();
+        });
+      }
+    }
+  }
+
+  const s = onlineState;
+
+  // ---- 연결 대기/오류 화면 ----
+  if (s.status === "connecting" || s.status === "waiting" || s.status === "error" || s.status === "disconnected") {
+    const wrap = h("div", { class: "screen center-screen" });
+    wrap.appendChild(h("div", { class: "logo" }, ["루미큐브 ", h("span", { class: "accent" }, ["ONLINE"])]));
+
+    if (s.status === "error") {
+      wrap.appendChild(h("div", { style: { margin: "12px 0" } }, ["연결 중 오류가 발생했습니다: " + s.errorMsg]));
+      wrap.appendChild(btn("로비로 돌아가기", "btn-purple btn-big", goLobby));
+      return wrap;
+    }
+    if (s.status === "disconnected") {
+      wrap.appendChild(h("div", { style: { margin: "12px 0" } }, ["상대와의 연결이 끊어졌습니다."]));
+      wrap.appendChild(btn("로비로 돌아가기", "btn-purple btn-big", goLobby));
+      return wrap;
+    }
+
+    if (s.role === "host") {
+      wrap.appendChild(h("div", { class: "subtitle" }, ["친구에게 아래 방 코드를 알려주세요"]));
+      const codeBox = h("div", {
+        style: {
+          fontSize: "32px", fontWeight: "700", letterSpacing: "4px",
+          padding: "16px 24px", borderRadius: "12px",
+          background: "rgba(255,255,255,0.08)", marginBottom: "16px",
+          fontFamily: "'Roboto Slab', serif"
+        }
+      }, [s.myCode || "생성 중..."]);
+      wrap.appendChild(codeBox);
+      wrap.appendChild(h("div", { style: { fontSize: "13px", opacity: "0.6", marginBottom: "20px" } },
+        ["친구가 이 코드를 입력하면 자동으로 게임이 시작됩니다. 잠시만 기다려주세요…"]));
+    } else {
+      wrap.appendChild(h("div", { class: "subtitle" }, ["방에 연결하는 중입니다…"]));
+    }
+    wrap.appendChild(btn("취소하고 로비로", "btn-purple", goLobby));
+    return wrap;
+  }
+
+  // ---- 아직 상대 hello를 못 받아 게임판이 안 만들어진 경우 (guest 쪽) ----
+  if (!s.board) {
+    const wrap = h("div", { class: "screen center-screen" });
+    wrap.appendChild(h("div", { class: "logo" }, ["루미큐브 ", h("span", { class: "accent" }, ["ONLINE"])]));
+    wrap.appendChild(h("div", { class: "subtitle" }, ["연결되었습니다. 게임을 준비하는 중입니다…"]));
+    wrap.appendChild(btn("취소하고 로비로", "btn-purple", goLobby));
+    return wrap;
+  }
+
+  const mySeat = s.mySeat;
+  const other = mySeat === 0 ? 1 : 0;
+  const myTurn = s.turn === mySeat;
+
+  function ensureSnapshot() {
+    if (s.snapshot === null) {
+      s.snapshot = s.board.map(g => g.map(t => Object.assign({}, t)));
+      s.snapshotHand = s.hands[mySeat].map(t => Object.assign({}, t));
+    }
+  }
+
+  function toggleSelect(id) {
+    if (s.winner !== null || !myTurn) return;
+    const idx = s.selectedOrder.indexOf(id);
+    if (idx !== -1) s.selectedOrder.splice(idx, 1);
+    else s.selectedOrder.push(id);
+    render();
+  }
+
+  function takeSelectedFromHand() {
+    const hand = s.hands[mySeat];
+    const tiles = s.selectedOrder.map(id => hand.find(t => t.id === id)).filter(Boolean);
+    s.hands[mySeat] = hand.filter(t => !s.selectedOrder.includes(t.id));
+    s.selectedOrder = [];
+    return tiles;
+  }
+
+  function playSelectedAsNewGroup() {
+    if (!myTurn || s.selectedOrder.length === 0) return;
+    ensureSnapshot();
+    const tiles = takeSelectedFromHand();
+    s.board.push(autoArrangeGroup(tiles));
+    render();
+  }
+
+  function addToGroup(gi) {
+    if (!myTurn || s.selectedOrder.length === 0) return;
+    ensureSnapshot();
+    const tiles = takeSelectedFromHand();
+    s.board[gi] = autoArrangeGroup(s.board[gi].concat(tiles));
+    render();
+  }
+
+  function returnTile(gi, ti) {
+    if (!myTurn || s.winner !== null) return;
+    const tile = s.board[gi][ti];
+    if (isLockedTile(s.snapshot, s.board, tile.id)) {
+      toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
+      return;
+    }
+    ensureSnapshot();
+    s.board[gi].splice(ti, 1);
+    s.board = s.board.filter(g => g.length > 0);
+    s.hands[mySeat].push(tile);
+    render();
+  }
+
+  function removeTileFromBoardById(tileId) {
+    for (let gi = 0; gi < s.board.length; gi++) {
+      const ti = s.board[gi].findIndex(t => t.id === tileId);
+      if (ti !== -1) {
+        const tile = s.board[gi][ti];
+        s.board[gi].splice(ti, 1);
+        s.board = s.board.filter(g => g.length > 0);
+        return tile;
+      }
+    }
+    return null;
+  }
+
+  function dropToGroup(gi, tileId) {
+    if (!myTurn || s.winner !== null) return;
+    ensureSnapshot();
+    const hand = s.hands[mySeat];
+    let tile = null;
+    const inHandIdx = hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) {
+      tile = hand[inHandIdx];
+      hand.splice(inHandIdx, 1);
+      const selIdx = s.selectedOrder.indexOf(tileId);
+      if (selIdx !== -1) s.selectedOrder.splice(selIdx, 1);
+    } else {
+      tile = removeTileFromBoardById(tileId);
+    }
+    if (tile) s.board[gi] = autoArrangeGroup(s.board[gi].concat([tile]));
+    render();
+  }
+
+  function dropToNewGroup(tileId) {
+    if (!myTurn || s.winner !== null) return;
+    ensureSnapshot();
+    const hand = s.hands[mySeat];
+    let tile = null;
+    const inHandIdx = hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) {
+      tile = hand[inHandIdx];
+      hand.splice(inHandIdx, 1);
+      const selIdx = s.selectedOrder.indexOf(tileId);
+      if (selIdx !== -1) s.selectedOrder.splice(selIdx, 1);
+    } else {
+      tile = removeTileFromBoardById(tileId);
+    }
+    if (tile) s.board.push([tile]);
+    render();
+  }
+
+  function dropToHand(tileId) {
+    if (!myTurn || s.winner !== null) return;
+    const hand = s.hands[mySeat];
+    const inHandIdx = hand.findIndex(t => t.id === tileId);
+    if (inHandIdx !== -1) return;
+    if (isLockedTile(s.snapshot, s.board, tileId)) {
+      toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
+      return;
+    }
+    ensureSnapshot();
+    const tile = removeTileFromBoardById(tileId);
+    if (tile) hand.push(tile);
+    render();
+  }
+
+  function sortHand() {
+    s.hands[mySeat] = sortTiles(s.hands[mySeat]);
+    render();
+  }
+
+  function cancelTurn() {
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hands[mySeat] = s.snapshotHand.map(t => Object.assign({}, t));
+    }
+    s.snapshot = null; s.snapshotHand = null;
+    s.selectedOrder = [];
+    s.message = "이번 턴 변경을 취소했습니다.";
+    render();
+  }
+
+  function finishLocalTurnAndSync(nextTurn, nextMessage) {
+    s.snapshot = null; s.snapshotHand = null;
+    s.selectedOrder = [];
+    s.turn = nextTurn;
+    s.turnDeadline = newTurnDeadline();
+    s.message = nextMessage;
+    broadcastOnlineState();
+    render();
+  }
+
+  function drawTile() {
+    if (!myTurn || s.winner !== null) return;
+    if (s.pool.length === 0) { toast("풀이 비었습니다."); return; }
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hands[mySeat] = s.snapshotHand.map(t => Object.assign({}, t));
+      s.snapshot = null; s.snapshotHand = null;
+    }
+    const t = s.pool.shift();
+    s.hands[mySeat] = sortTiles(s.hands[mySeat].concat([t]));
+    finishLocalTurnAndSync(other, s.names[other] + "님의 차례입니다.");
+  }
+
+  function endTurn() {
+    if (!myTurn || s.winner !== null) return;
+    const evalRes = evaluateBoard(s.board);
+    if (!evalRes.valid) { toast("보드에 유효하지 않은 묶음이 있습니다."); return; }
+    if (!s.initialPlayed[mySeat]) {
+      if (!s.snapshot) { toast("첫 배치는 보드에 타일을 내야 합니다 (합계 30 이상)."); return; }
+      const added = computeAddedValue(s.snapshot, s.board);
+      if (added < 30) { toast("첫 배치는 합계 30 이상이어야 합니다. 현재 추가분: " + added + "점"); return; }
+      s.initialPlayed[mySeat] = true;
+    }
+    if (s.hands[mySeat].length === 0) {
+      s.winner = mySeat;
+      s.snapshot = null; s.snapshotHand = null;
+      broadcastOnlineState();
+      render();
+      return;
+    }
+    finishLocalTurnAndSync(other, s.names[other] + "님의 차례입니다.");
+  }
+
+  const boardValid = evaluateBoard(s.board).valid;
+  const hand = s.hands[mySeat];
+
+  const controls = [
+    btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
+      playSelectedAsNewGroup, s.selectedOrder.length === 0 || !myTurn || s.winner !== null),
+    btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !myTurn || s.winner !== null),
+    btn("타일 뽑기", "btn-purple", drawTile, !myTurn || s.winner !== null),
+    btn("턴 종료 ✓", "btn-yellow", endTurn, !myTurn || s.winner !== null)
+  ];
+
+  let overlayEl = null;
+  if (s.winner !== null) {
+    overlayEl = winnerOverlay(
+      "🏆",
+      s.names[s.winner] + "님이 승리했습니다! 🎉",
+      null,
+      goLobby
+    );
+  }
+
+  let timerEl = null;
+  if (s.winner === null && s.turnDeadline) {
+    timerEl = buildTimerBadge(s.turnDeadline, () => {
+      if (myTurn) {
+        toast("시간 초과! 타일을 뽑습니다.");
+        drawTile();
+      }
+    });
+  }
+
+  return buildGameShell({
+    title: "루미큐브 · 온라인 1:1 대전",
+    subtitle: (myTurn ? "내 차례" : s.names[s.turn] + "님의 차례") +
+      " · 풀 " + s.pool.length + "개 · 상대 패 " + s.hands[other].length + "개",
+    message: s.message,
+    tone: myTurn ? "go" : "wait",
+    boardValid,
+    board: s.board,
+    hand,
+    selectedOrder: s.selectedOrder,
+    onToggleSelect: toggleSelect,
+    onReturnTile: returnTile,
+    onAddToGroup: addToGroup,
+    onDropToGroup: dropToGroup,
+    onDropToNewGroup: dropToNewGroup,
+    onDropToHand: dropToHand,
+    onSortHand: sortHand,
+    canInteract: myTurn && s.winner === null,
+    onExit: goLobby,
+    controlsEls: controls,
+    winnerOverlayEl: overlayEl,
+    timerEl: timerEl
+  });
+}
+
+function renderPassScreen(s) {
+  const wrap = h("div", { class: "screen" });
+  const pass = h("div", { class: "turn-pass-overlay" });
+  pass.appendChild(h("div", { style: { fontSize: "40px", marginBottom: "12px" } }, ["🔄"]));
+  pass.appendChild(h("div", { class: "overlay-title" }, [s.message]));
+  pass.appendChild(h("div", { style: { fontSize: "13px", opacity: "0.6", margin: "10px 0 22px" } },
+    ["화면을 " + s.names[s.turn] + "님에게 넘겨주세요. 준비되면 아래 버튼을 누르세요."]));
+  pass.appendChild(btn(s.names[s.turn] + "님, 차례 시작하기", "btn-yellow btn-big", () => {
+    s.turnDeadline = newTurnDeadline();
+    s.showPassScreen = false;
+    render();
+  }));
+  wrap.appendChild(pass);
+  return wrap;
+}
+
+// ============ 초기 렌더 ============
+render();
+</script>
+</body>
+</html>
