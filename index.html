@@ -2052,8 +2052,10 @@ function renderLocalGame() {
 let onlinePeer = null;
 let onlineConn = null;
 let onlineState = null; // { role, myName, peerName, peerId, status, ...게임필드 }
+let onlineConnectTimer = null;
 
 function teardownOnlineConnection() {
+  clearOnlineConnectTimer();
   if (onlineConn) { try { onlineConn.close(); } catch (e) {} onlineConn = null; }
   if (onlinePeer) { try { onlinePeer.destroy(); } catch (e) {} onlinePeer = null; }
   onlineState = null;
@@ -2166,6 +2168,78 @@ function handleOnlineMessage(msg) {
   }
 }
 
+function clearOnlineConnectTimer() {
+  if (onlineConnectTimer) { clearTimeout(onlineConnectTimer); onlineConnectTimer = null; }
+}
+
+function failOnlineConnection(msg) {
+  clearOnlineConnectTimer();
+  if (!onlineState) return;
+  onlineState.status = "error";
+  onlineState.errorMsg = msg;
+  render();
+}
+
+function startOnlineConnection(cfg) {
+  clearOnlineConnectTimer();
+
+  if (cfg.role === "host") {
+    const code = shortRoomCode();
+    onlineState.myCode = code;
+    onlinePeer = new Peer("rmk-" + code);
+    onlinePeer.on("open", () => { render(); });
+    onlinePeer.on("connection", (conn) => {
+      clearOnlineConnectTimer();
+      setupHostConnectionHandlers(conn, code);
+    });
+    onlinePeer.on("error", (err) => {
+      const type = err && err.type;
+      let msg = "연결 서버에 접속하지 못했습니다. 무료 공개 서버가 일시적으로 불안정할 수 있어요. 잠시 후 다시 시도해주세요.";
+      if (type === "unavailable-id") msg = "방 코드가 이미 사용 중입니다. 다시 시도해주세요.";
+      failOnlineConnection(msg);
+    });
+    onlinePeer.on("disconnected", () => {
+      if (onlineState && onlineState.status === "connecting") {
+        failOnlineConnection("연결 서버와의 연결이 끊어졌습니다. 다시 시도해주세요.");
+      }
+    });
+    // 호스트는 상대가 들어올 때까지 무한히 기다리는 게 정상이라 타임아웃을 걸지 않음.
+  } else {
+    onlinePeer = new Peer();
+    onlinePeer.on("open", () => {
+      const targetId = "rmk-" + cfg.joinCode.trim().toUpperCase();
+      const conn = onlinePeer.connect(targetId, { reliable: true });
+      onlineConn = conn;
+
+      // 게스트는 데이터 채널이 일정 시간 안에 열리지 않으면 실패로 처리 (무한 대기 방지)
+      onlineConnectTimer = setTimeout(() => {
+        failOnlineConnection("방에 연결할 수 없습니다. 방 코드를 확인하거나, 호스트가 방을 아직 열어두고 있는지 확인해주세요.");
+      }, 15000);
+
+      conn.on("open", () => {
+        clearOnlineConnectTimer();
+        onlineState.status = "playing";
+        sendOnline({ type: "hello", payload: { name: onlineState.myName } });
+        render();
+      });
+      conn.on("data", (msg) => handleOnlineMessage(msg));
+      conn.on("close", () => {
+        if (onlineState) { onlineState.status = "disconnected"; render(); }
+      });
+      conn.on("error", () => {
+        failOnlineConnection("방에 연결하는 중 오류가 발생했습니다. 방 코드를 확인하고 다시 시도해주세요.");
+      });
+      render();
+    });
+    onlinePeer.on("error", (err) => {
+      const type = err && err.type;
+      let msg = "연결 서버에 접속하지 못했습니다. 무료 공개 서버가 일시적으로 불안정할 수 있어요. 잠시 후 다시 시도해주세요.";
+      if (type === "peer-unavailable") msg = "해당 방 코드를 찾을 수 없습니다. 코드를 다시 확인하거나, 호스트가 방을 열어두었는지 확인해주세요.";
+      failOnlineConnection(msg);
+    });
+  }
+}
+
 function renderOnlineGame() {
   const cfg = state; // { role, myName, joinCode? }
 
@@ -2176,45 +2250,10 @@ function renderOnlineGame() {
       mySeat: cfg.role === "host" ? 0 : 1,
       status: "connecting",
       peerName: null,
-      myCode: null
+      myCode: null,
+      connectAttempt: cfg.__retryAttempt || 0
     };
-
-    if (!onlinePeer) {
-      if (cfg.role === "host") {
-        const code = shortRoomCode();
-        onlineState.myCode = code;
-        onlinePeer = new Peer("rmk-" + code);
-        onlinePeer.on("open", () => { render(); });
-        onlinePeer.on("connection", (conn) => setupHostConnectionHandlers(conn, code));
-        onlinePeer.on("error", (err) => {
-          onlineState.status = "error";
-          onlineState.errorMsg = (err && err.type) || "연결 오류";
-          render();
-        });
-      } else {
-        onlinePeer = new Peer();
-        onlinePeer.on("open", () => {
-          const targetId = "rmk-" + cfg.joinCode.trim().toUpperCase();
-          const conn = onlinePeer.connect(targetId, { reliable: true });
-          onlineConn = conn;
-          conn.on("open", () => {
-            onlineState.status = "playing";
-            sendOnline({ type: "hello", payload: { name: onlineState.myName } });
-            render();
-          });
-          conn.on("data", (msg) => handleOnlineMessage(msg));
-          conn.on("close", () => {
-            if (onlineState) { onlineState.status = "disconnected"; render(); }
-          });
-          render();
-        });
-        onlinePeer.on("error", (err) => {
-          onlineState.status = "error";
-          onlineState.errorMsg = (err && err.type) || "연결 오류";
-          render();
-        });
-      }
-    }
+    startOnlineConnection(cfg);
   }
 
   const s = onlineState;
@@ -2225,8 +2264,16 @@ function renderOnlineGame() {
     wrap.appendChild(h("div", { class: "logo" }, ["루미큐브 ", h("span", { class: "accent" }, ["ONLINE"])]));
 
     if (s.status === "error") {
-      wrap.appendChild(h("div", { style: { margin: "12px 0" } }, ["연결 중 오류가 발생했습니다: " + s.errorMsg]));
-      wrap.appendChild(btn("로비로 돌아가기", "btn-purple btn-big", goLobby));
+      wrap.appendChild(h("div", { style: { margin: "12px 0", maxWidth: "320px" } }, [s.errorMsg || "연결 중 오류가 발생했습니다."]));
+      const retryRow = h("div", { style: { display: "flex", gap: "8px" } });
+      retryRow.appendChild(btn("다시 시도", "btn-green btn-big", () => {
+        const attempt = (s.connectAttempt || 0) + 1;
+        teardownOnlineConnection();
+        state = Object.assign({}, cfg, { __retryAttempt: attempt });
+        render();
+      }));
+      retryRow.appendChild(btn("로비로", "btn-purple btn-big", goLobby));
+      wrap.appendChild(retryRow);
       return wrap;
     }
     if (s.status === "disconnected") {
@@ -2250,6 +2297,12 @@ function renderOnlineGame() {
         ["친구가 이 코드를 입력하면 자동으로 게임이 시작됩니다. 잠시만 기다려주세요…"]));
     } else {
       wrap.appendChild(h("div", { class: "subtitle" }, ["방에 연결하는 중입니다…"]));
+      wrap.appendChild(h("div", { style: { fontSize: "13px", opacity: "0.6", marginBottom: "8px" } },
+        ["최대 15초 정도 걸릴 수 있어요. 호스트가 방 코드 화면을 계속 띄워두고 있어야 합니다."]));
+      if (s.connectAttempt > 0) {
+        wrap.appendChild(h("div", { style: { fontSize: "12px", opacity: "0.5", marginBottom: "8px" } },
+          [(s.connectAttempt + 1) + "번째 시도 중…"]));
+      }
     }
     wrap.appendChild(btn("취소하고 로비로", "btn-purple", goLobby));
     return wrap;
