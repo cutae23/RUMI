@@ -370,6 +370,19 @@
     flex-wrap: nowrap;
     overflow: visible;
     padding: 10px 0 4px; /* top pad for selected-lift */
+    position: relative;
+  }
+  .hand-insert-marker {
+    position: absolute;
+    top: 4px;
+    bottom: 0px;
+    width: 3px;
+    border-radius: 2px;
+    background: #ffd76a;
+    box-shadow: 0 0 6px rgba(255, 215, 106, 0.8);
+    pointer-events: none;
+    z-index: 5;
+    transition: left 0.08s ease-out;
   }
 
   /* ---------- 오버레이 ---------- */
@@ -1004,6 +1017,20 @@ function findDropZone(x, y) {
   return target.closest(".group-row, .new-group-drop, .hand-area");
 }
 
+// 손패 영역 안에서 x좌표 기준으로 "이 타일들 사이에 끼워넣겠다"는 삽입 인덱스를 계산.
+// 각 타일의 중심 x좌표와 비교해 가장 가까운 틈을 찾는다.
+function findHandInsertIndex(handTilesEl, x, excludeTileId) {
+  const tiles = Array.from(handTilesEl.querySelectorAll(":scope > .tile, :scope > .tile-wrap"))
+    .filter(el => el.dataset.tileId !== excludeTileId);
+  if (tiles.length === 0) return 0;
+  for (let i = 0; i < tiles.length; i++) {
+    const rect = tiles[i].getBoundingClientRect();
+    const mid = rect.left + rect.width / 2;
+    if (x < mid) return i;
+  }
+  return tiles.length;
+}
+
 function makeDraggableTile(el, tileId, onTap) {
   el.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -1036,6 +1063,13 @@ function makeDraggableTile(el, tileId, onTap) {
       ghost.style.top  = (py - offsetY) + "px";
     }
 
+    function clearInsertMarker() {
+      if (activeDrag && activeDrag.markerEl) {
+        activeDrag.markerEl.remove();
+        activeDrag.markerEl = null;
+      }
+    }
+
     function updateZone(px, py) {
       if (!activeDrag) return;
       const zone = findDropZone(px, py);
@@ -1043,6 +1077,38 @@ function makeDraggableTile(el, tileId, onTap) {
         if (activeDrag.lastZone) activeDrag.lastZone.classList.remove("drag-over");
         if (zone) zone.classList.add("drag-over");
         activeDrag.lastZone = zone;
+      }
+
+      // 손패 영역 안이면 타일 사이 정확한 삽입 위치를 계산해 표시선을 보여준다.
+      if (zone && zone.classList.contains("hand-area")) {
+        const handTilesEl = zone.querySelector(".hand-tiles");
+        if (handTilesEl) {
+          const idx = findHandInsertIndex(handTilesEl, px, tileId);
+          activeDrag.insertIndex = idx;
+          if (!activeDrag.markerEl) {
+            activeDrag.markerEl = document.createElement("div");
+            activeDrag.markerEl.className = "hand-insert-marker";
+            handTilesEl.appendChild(activeDrag.markerEl);
+          }
+          const tiles = Array.from(handTilesEl.querySelectorAll(":scope > .tile, :scope > .tile-wrap"))
+            .filter(elx => elx.dataset.tileId !== tileId);
+          const containerRect = handTilesEl.getBoundingClientRect();
+          let leftPx;
+          if (tiles.length === 0) {
+            leftPx = 0;
+          } else if (idx === 0) {
+            leftPx = tiles[0].getBoundingClientRect().left - containerRect.left - 4;
+          } else if (idx >= tiles.length) {
+            const last = tiles[tiles.length - 1].getBoundingClientRect();
+            leftPx = last.right - containerRect.left + 1;
+          } else {
+            leftPx = tiles[idx].getBoundingClientRect().left - containerRect.left - 4;
+          }
+          activeDrag.markerEl.style.left = leftPx + "px";
+        }
+      } else {
+        activeDrag.insertIndex = null;
+        clearInsertMarker();
       }
     }
 
@@ -1075,17 +1141,19 @@ function makeDraggableTile(el, tileId, onTap) {
       window.removeEventListener("pointercancel", onCancel);
       el.classList.remove("dragging");
       if (ghost) { ghost.remove(); ghost = null; }
+      clearInsertMarker();
     }
 
     function onUp(ev) {
       if (ev.pointerId !== pointerId) return;
       const didDrag = wasDragging;
       const zone = activeDrag ? activeDrag.lastZone : null;
+      const insertIndex = activeDrag ? activeDrag.insertIndex : null;
       cleanup();
       if (zone) zone.classList.remove("drag-over");
       activeDrag = null;
       if (didDrag) {
-        if (zone && zone._dropHandler) zone._dropHandler(tileId);
+        if (zone && zone._dropHandler) zone._dropHandler(tileId, insertIndex);
       } else {
         if (onTap) onTap();
       }
@@ -1127,7 +1195,8 @@ function tileEl(tile, opts) {
 
   const tile_el = h("div", {
     class: classes.join(" "),
-    style: { color }
+    style: { color },
+    "data-tile-id": tile.id
   }, [tile.joker ? "★" : String(tile.number)]);
 
   if (opts.draggable) {
@@ -1137,7 +1206,7 @@ function tileEl(tile, opts) {
   }
 
   if (opts.orderNum != null) {
-    const wrap = h("div", { class: "tile-wrap" });
+    const wrap = h("div", { class: "tile-wrap", "data-tile-id": tile.id });
     wrap.appendChild(tile_el);
     wrap.appendChild(h("div", { class: "order-badge" }, [String(opts.orderNum)]));
     return wrap;
@@ -1380,11 +1449,13 @@ function buildGameShell(opts) {
   wrap.appendChild(controlBar);
 
   const handArea = h("div", { class: "hand-area" });
-  if (opts.canInteract) handArea._dropHandler = (tileId) => opts.onDropToHand(tileId);
+  if (opts.canInteract) handArea._dropHandler = (tileId, insertIndex) => opts.onDropToHand(tileId, insertIndex);
   const labelRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: "0", marginBottom: "4px" } });
   labelRow.appendChild(h("div", { class: "hand-label" }, ["내 손패 (" + opts.hand.length + "개) · 탭=선택 · 길게누름=드래그"]));
   if (opts.onSortHand) {
-    const sortLabel = opts.sortMode === "number" ? "🔢 숫자순 (탭→색상순)" : "🎨 색상순 (탭→숫자순)";
+    const sortLabel = opts.sortMode === "number" ? "🔢 숫자순 (탭→색상순)" :
+                      opts.sortMode === "manual"  ? "✋ 수동 (탭→색상순)" :
+                                                   "🎨 색상순 (탭→숫자순)";
     const sortBtn = h("button", {
       class: "btn btn-yellow",
       style: { padding: "5px 12px", fontSize: "12px", flexShrink: "0", fontWeight: "700" },
@@ -1397,7 +1468,7 @@ function buildGameShell(opts) {
   // Auto-scale hand tiles to fit screen width using CSS zoom
   const handTiles = h("div", { class: "hand-tiles" });
   if (opts.canInteract) {
-    handTiles._dropHandler = (tileId) => opts.onDropToHand(tileId);
+    handTiles._dropHandler = (tileId, insertIndex) => opts.onDropToHand(tileId, insertIndex);
   }
 
   opts.hand.forEach(tile => {
@@ -1603,22 +1674,36 @@ function renderAIGame() {
     render();
   }
 
-  function dropToHand(tileId) {
+  function dropToHand(tileId, insertIndex) {
     if (s.turn !== "player" || s.winner) return;
     const inHandIdx = s.hand.findIndex(t => t.id === tileId);
-    if (inHandIdx !== -1) return; // 이미 손패
+    if (inHandIdx !== -1) {
+      // 손패 안에서 드래그로 순서만 재배치
+      if (insertIndex == null) return;
+      const [moved] = s.hand.splice(inHandIdx, 1);
+      let idx = insertIndex;
+      if (inHandIdx < insertIndex) idx -= 1; // 자기 자신을 빼고 난 뒤의 인덱스 보정
+      idx = Math.max(0, Math.min(idx, s.hand.length));
+      s.hand.splice(idx, 0, moved);
+      s.sortMode = "manual";
+      render();
+      return;
+    }
     if (isLockedTile(s.snapshot, s.board, tileId)) {
       toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
       return;
     }
     ensureSnapshot();
     const tile = removeTileFromBoardById(tileId);
-    if (tile) s.hand.push(tile);
+    if (tile) {
+      if (insertIndex == null || insertIndex >= s.hand.length) s.hand.push(tile);
+      else s.hand.splice(insertIndex, 0, tile);
+    }
     render();
   }
 
   function sortHand() {
-    s.sortMode = s.sortMode === "color" ? "number" : "color";
+    s.sortMode = s.sortMode === "color" ? "number" : "color"; // manual → color, number → color, color → number
     s.hand = s.sortMode === "color" ? sortTilesByColor(s.hand) : sortTilesByNumber(s.hand);
     render();
   }
@@ -1917,23 +2002,36 @@ function renderLocalGame() {
     render();
   }
 
-  function dropToHand(tileId) {
+  function dropToHand(tileId, insertIndex) {
     if (s.winner) return;
     const hand = s.hands[s.turn];
     const inHandIdx = hand.findIndex(t => t.id === tileId);
-    if (inHandIdx !== -1) return;
+    if (inHandIdx !== -1) {
+      if (insertIndex == null) return;
+      const [moved] = hand.splice(inHandIdx, 1);
+      let idx = insertIndex;
+      if (inHandIdx < insertIndex) idx -= 1;
+      idx = Math.max(0, Math.min(idx, hand.length));
+      hand.splice(idx, 0, moved);
+      s.sortModes[s.turn] = "manual";
+      render();
+      return;
+    }
     if (isLockedTile(s.snapshot, s.board, tileId)) {
       toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
       return;
     }
     ensureSnapshot();
     const tile = removeTileFromBoardById(tileId);
-    if (tile) hand.push(tile);
+    if (tile) {
+      if (insertIndex == null || insertIndex >= hand.length) hand.push(tile);
+      else hand.splice(insertIndex, 0, tile);
+    }
     render();
   }
 
   function sortHand() {
-    const newMode = s.sortModes[s.turn] === "color" ? "number" : "color";
+    const newMode = s.sortModes[s.turn] === "color" ? "number" : "color"; // manual/number → color, color → number
     s.sortModes[s.turn] = newMode;
     s.hands[s.turn] = newMode === "color" ? sortTilesByColor(s.hands[s.turn]) : sortTilesByNumber(s.hands[s.turn]);
     render();
@@ -2423,18 +2521,31 @@ function renderOnlineGame() {
     render();
   }
 
-  function dropToHand(tileId) {
+  function dropToHand(tileId, insertIndex) {
     if (!myTurn || s.winner !== null) return;
     const hand = s.hands[mySeat];
     const inHandIdx = hand.findIndex(t => t.id === tileId);
-    if (inHandIdx !== -1) return;
+    if (inHandIdx !== -1) {
+      if (insertIndex == null) return;
+      const [moved] = hand.splice(inHandIdx, 1);
+      let idx = insertIndex;
+      if (inHandIdx < insertIndex) idx -= 1;
+      idx = Math.max(0, Math.min(idx, hand.length));
+      hand.splice(idx, 0, moved);
+      s.sortMode = "manual";
+      render();
+      return;
+    }
     if (isLockedTile(s.snapshot, s.board, tileId)) {
       toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
       return;
     }
     ensureSnapshot();
     const tile = removeTileFromBoardById(tileId);
-    if (tile) hand.push(tile);
+    if (tile) {
+      if (insertIndex == null || insertIndex >= hand.length) hand.push(tile);
+      else hand.splice(insertIndex, 0, tile);
+    }
     render();
   }
 
