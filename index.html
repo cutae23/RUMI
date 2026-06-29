@@ -732,12 +732,14 @@ function evaluateGroup(group) {
 
 function evaluateBoard(board) {
   let total = 0;
+  let invalidTileCount = 0;
+  let anyInvalid = false;
   for (const g of board) {
     const res = evaluateGroup(g);
-    if (!res.valid) return { valid: false, total: 0 };
-    total += res.value;
+    if (!res.valid) { anyInvalid = true; invalidTileCount += g.length; }
+    else total += res.value;
   }
-  return { valid: true, total };
+  return { valid: !anyInvalid, total, invalidTileCount };
 }
 
 function computeAddedValue(before, after) {
@@ -1812,15 +1814,41 @@ function renderAIGame() {
     render();
   }
 
-  const boardValid = evaluateBoard(s.board).valid;
+  const boardEval = evaluateBoard(s.board);
+  const boardValid = boardEval.valid;
 
-  const controls = [
-    btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
-      playSelectedAsNewGroup, s.selectedOrder.length === 0 || s.turn !== "player" || !!s.winner),
-    btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || s.turn !== "player" || !!s.winner),
-    btn("타일 뽑기", "btn-purple", drawTile, s.turn !== "player" || !!s.winner),
-    btn("턴 종료 ✓", "btn-yellow", endTurn, s.turn !== "player" || !!s.winner)
-  ];
+  function applyPenalty() {
+    // 보드를 턴 시작 전 상태로 복원
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hand = s.snapshotHand.map(t => Object.assign({}, t));
+      s.snapshot = null; s.snapshotHand = null;
+    }
+    // 기본 3개 + invalid 묶음 타일 수만큼 뽑기
+    const penalty = 3 + boardEval.invalidTileCount;
+    const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
+    const fn = s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor;
+    s.hand = s.sortMode === "manual" ? s.hand.concat(drawn) : fn(s.hand.concat(drawn));
+    s.penaltyMode = false;
+    s.selectedOrder = [];
+    s.message = "페널티: 타일 " + drawn.length + "개를 가져왔습니다. AI 차례입니다.";
+    s.turn = "ai";
+    s.turnDeadline = null;
+    render();
+    setTimeout(runAiTurn, 900);
+  }
+
+  const controls = s.penaltyMode
+    ? [
+        btn("그만 (패널티 적용)", "btn-red btn-big", applyPenalty, false),
+      ]
+    : [
+        btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
+          playSelectedAsNewGroup, s.selectedOrder.length === 0 || s.turn !== "player" || !!s.winner),
+        btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || s.turn !== "player" || !!s.winner),
+        btn("타일 뽑기", "btn-purple", drawTile, s.turn !== "player" || !!s.winner),
+        btn("턴 종료 ✓", "btn-yellow", endTurn, s.turn !== "player" || !!s.winner)
+      ];
 
   let overlayEl = null;
   if (s.winner) {
@@ -1835,10 +1863,13 @@ function renderAIGame() {
   }
 
   let timerEl = null;
-  if (s.turn === "player" && !s.winner && s.turnDeadline) {
+  if (s.turn === "player" && !s.winner && s.turnDeadline && !s.penaltyMode) {
     timerEl = buildTimerBadge(s.turnDeadline, () => {
-      toast("시간 초과! 타일을 뽑습니다.");
-      drawTile();
+      // 시간 초과 → 페널티 정리 모드 진입
+      s.penaltyMode = true;
+      s.turnDeadline = null;
+      s.message = "⏰ 시간 초과! 보드를 최대한 정리하고 '그만' 버튼을 누르세요. (기본 3개 + 미완성 타일 수만큼 페널티)";
+      render();
     });
   }
 
@@ -1860,7 +1891,7 @@ function renderAIGame() {
     onDropToHand: dropToHand,
     onSortHand: sortHand,
     sortMode: s.sortMode,
-    canInteract: s.turn === "player" && !s.winner,
+    canInteract: (s.turn === "player" || s.penaltyMode) && !s.winner,
     onExit: goLobby,
     controlsEls: controls,
     winnerOverlayEl: overlayEl,
@@ -2090,16 +2121,36 @@ function renderLocalGame() {
     render();
   }
 
-  const boardValid = evaluateBoard(s.board).valid;
+  const boardEval = evaluateBoard(s.board);
+  const boardValid = boardEval.valid;
   const hand = s.hands[s.turn];
 
-  const controls = [
-    btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
-      playSelectedAsNewGroup, s.selectedOrder.length === 0 || !!s.winner),
-    btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !!s.winner),
-    btn("타일 뽑기", "btn-purple", drawTile, !!s.winner),
-    btn("턴 종료 ✓", "btn-yellow", endTurn, !!s.winner)
-  ];
+  function applyPenalty() {
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hands[s.turn] = s.snapshotHand.map(t => Object.assign({}, t));
+      s.snapshot = null; s.snapshotHand = null;
+    }
+    const penalty = 3 + boardEval.invalidTileCount;
+    const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
+    const mode = s.sortModes[s.turn];
+    const fn = mode === "number" ? sortTilesByNumber : sortTilesByColor;
+    s.hands[s.turn] = mode === "manual" ? s.hands[s.turn].concat(drawn) : fn(s.hands[s.turn].concat(drawn));
+    s.penaltyMode = false;
+    s.selectedOrder = [];
+    const penaltyMsg = "페널티: " + drawn.length + "개 가져옴.";
+    passTurn(other, penaltyMsg + " " + s.names[other] + "님의 차례입니다.");
+  }
+
+  const controls = s.penaltyMode
+    ? [btn("그만 (페널티 적용)", "btn-red btn-big", applyPenalty, false)]
+    : [
+        btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
+          playSelectedAsNewGroup, s.selectedOrder.length === 0 || !!s.winner),
+        btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !!s.winner),
+        btn("타일 뽑기", "btn-purple", drawTile, !!s.winner),
+        btn("턴 종료 ✓", "btn-yellow", endTurn, !!s.winner)
+      ];
 
   let overlayEl = null;
   if (s.winner !== null) {
@@ -2112,10 +2163,12 @@ function renderLocalGame() {
   }
 
   let timerEl = null;
-  if (!s.winner && s.turnDeadline) {
+  if (!s.winner && s.turnDeadline && !s.penaltyMode) {
     timerEl = buildTimerBadge(s.turnDeadline, () => {
-      toast("시간 초과! 타일을 뽑습니다.");
-      drawTile();
+      s.penaltyMode = true;
+      s.turnDeadline = null;
+      s.message = "⏰ 시간 초과! 보드를 최대한 정리하고 '그만' 버튼을 누르세요. (기본 3개 + 미완성 타일 수만큼 페널티)";
+      render();
     });
   }
 
@@ -2610,16 +2663,34 @@ function renderOnlineGame() {
     finishLocalTurnAndSync(other, s.names[other] + "님의 차례입니다.");
   }
 
-  const boardValid = evaluateBoard(s.board).valid;
+  const boardEval = evaluateBoard(s.board);
+  const boardValid = boardEval.valid;
   const hand = s.hands[mySeat];
 
-  const controls = [
-    btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
-      playSelectedAsNewGroup, s.selectedOrder.length === 0 || !myTurn || s.winner !== null),
-    btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !myTurn || s.winner !== null),
-    btn("타일 뽑기", "btn-purple", drawTile, !myTurn || s.winner !== null),
-    btn("턴 종료 ✓", "btn-yellow", endTurn, !myTurn || s.winner !== null)
-  ];
+  function applyPenalty() {
+    if (s.snapshot) {
+      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
+      s.hands[mySeat] = s.snapshotHand.map(t => Object.assign({}, t));
+      s.snapshot = null; s.snapshotHand = null;
+    }
+    const penalty = 3 + boardEval.invalidTileCount;
+    const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
+    const fn = s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor;
+    s.hands[mySeat] = s.sortMode === "manual" ? s.hands[mySeat].concat(drawn) : fn(s.hands[mySeat].concat(drawn));
+    s.penaltyMode = false;
+    s.selectedOrder = [];
+    finishLocalTurnAndSync(other, s.names[other] + "님의 차례입니다. (상대 페널티 " + drawn.length + "개 수령)");
+  }
+
+  const controls = s.penaltyMode
+    ? [btn("그만 (페널티 적용)", "btn-red btn-big", applyPenalty, false)]
+    : [
+        btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
+          playSelectedAsNewGroup, s.selectedOrder.length === 0 || !myTurn || s.winner !== null),
+        btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !myTurn || s.winner !== null),
+        btn("타일 뽑기", "btn-purple", drawTile, !myTurn || s.winner !== null),
+        btn("턴 종료 ✓", "btn-yellow", endTurn, !myTurn || s.winner !== null)
+      ];
 
   let overlayEl = null;
   if (s.winner !== null) {
@@ -2632,11 +2703,13 @@ function renderOnlineGame() {
   }
 
   let timerEl = null;
-  if (s.winner === null && s.turnDeadline) {
+  if (s.winner === null && s.turnDeadline && !s.penaltyMode) {
     timerEl = buildTimerBadge(s.turnDeadline, () => {
       if (myTurn) {
-        toast("시간 초과! 타일을 뽑습니다.");
-        drawTile();
+        s.penaltyMode = true;
+        s.turnDeadline = null;
+        s.message = "⏰ 시간 초과! 보드를 최대한 정리하고 '그만' 버튼을 누르세요. (기본 3개 + 미완성 타일 수만큼 페널티)";
+        render();
       }
     });
   }
@@ -2659,7 +2732,7 @@ function renderOnlineGame() {
     onDropToHand: dropToHand,
     onSortHand: sortHand,
     sortMode: s.sortMode,
-    canInteract: myTurn && s.winner === null,
+    canInteract: (myTurn || s.penaltyMode) && s.winner === null,
     onExit: goLobby,
     controlsEls: controls,
     winnerOverlayEl: overlayEl,
