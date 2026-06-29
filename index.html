@@ -906,6 +906,22 @@ function materializeCandidate(hand, cand) {
 }
 
 // 그리디로 손패에서 낼 묶음들을 찾음: 가치가 큰 후보부터 충돌 없이 채택
+// 페널티 계산: invalid 묶음에 속한 타일 중 이번 턴에 새로 추가한 것만 카운트.
+// (원래 보드에 있던 타일은 복원되므로 패널티 대상이 아님)
+function countPenaltyTiles(board, snapshot) {
+  const snapshotIds = new Set();
+  if (snapshot) snapshot.forEach(g => g.forEach(t => snapshotIds.add(t.id)));
+  let count = 0;
+  for (const g of board) {
+    if (!evaluateGroup(g).valid) {
+      for (const t of g) {
+        if (!snapshotIds.has(t.id)) count++;
+      }
+    }
+  }
+  return count;
+}
+
 function greedyPick(scored) {
   const usedHandIdx = new Set();
   const moves = [];
@@ -1818,14 +1834,13 @@ function renderAIGame() {
   const boardValid = boardEval.valid;
 
   function applyPenalty() {
-    // 보드를 턴 시작 전 상태로 복원
+    const penaltyCount = countPenaltyTiles(s.board, s.snapshot);
     if (s.snapshot) {
       s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
       s.hand = s.snapshotHand.map(t => Object.assign({}, t));
       s.snapshot = null; s.snapshotHand = null;
     }
-    // 기본 3개 + invalid 묶음 타일 수만큼 뽑기
-    const penalty = 3 + boardEval.invalidTileCount;
+    const penalty = 3 + penaltyCount;
     const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
     const fn = s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor;
     s.hand = s.sortMode === "manual" ? s.hand.concat(drawn) : fn(s.hand.concat(drawn));
@@ -2126,12 +2141,13 @@ function renderLocalGame() {
   const hand = s.hands[s.turn];
 
   function applyPenalty() {
+    const penaltyCount = countPenaltyTiles(s.board, s.snapshot);
     if (s.snapshot) {
       s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
       s.hands[s.turn] = s.snapshotHand.map(t => Object.assign({}, t));
       s.snapshot = null; s.snapshotHand = null;
     }
-    const penalty = 3 + boardEval.invalidTileCount;
+    const penalty = 3 + penaltyCount;
     const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
     const mode = s.sortModes[s.turn];
     const fn = mode === "number" ? sortTilesByNumber : sortTilesByColor;
@@ -2668,12 +2684,13 @@ function renderOnlineGame() {
   const hand = s.hands[mySeat];
 
   function applyPenalty() {
+    const penaltyCount = countPenaltyTiles(s.board, s.snapshot);
     if (s.snapshot) {
       s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
       s.hands[mySeat] = s.snapshotHand.map(t => Object.assign({}, t));
       s.snapshot = null; s.snapshotHand = null;
     }
-    const penalty = 3 + boardEval.invalidTileCount;
+    const penalty = 3 + penaltyCount;
     const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
     const fn = s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor;
     s.hands[mySeat] = s.sortMode === "manual" ? s.hands[mySeat].concat(drawn) : fn(s.hands[mySeat].concat(drawn));
