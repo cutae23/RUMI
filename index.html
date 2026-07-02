@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>루미큐브 · RUMMIKUB</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@500;700&family=Inter:wght@400;500;600;700&display=swap">
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
   :root {
     --bg-grad: radial-gradient(ellipse at top, #1B4332 0%, #0E2A1E 55%, #0A1F15 100%);
@@ -48,13 +47,6 @@
     justify-content: center;
     padding: 24px;
     text-align: center;
-  }
-  .screen.center-screen {
-    height: 100vh;
-    height: 100dvh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    justify-content: flex-start;
   }
   .btn {
     padding: 9px 14px;
@@ -147,19 +139,6 @@
     border-radius: 8px;
     padding: 3px;
   }
-  .zoom-group {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-  }
-  .zoom-group-label {
-    font-size: 9px;
-    opacity: 0.5;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    font-family: 'Inter', sans-serif;
-  }
   .zoom-btn {
     width: 28px;
     height: 28px;
@@ -225,25 +204,15 @@
   /* ---------- 보드 ---------- */
   .board-area {
     flex: 1 1 auto;
-    overflow: hidden;
-    position: relative;
-    min-height: 0;
-    touch-action: none;
-    cursor: grab;
-  }
-  .board-area:active { cursor: grabbing; }
-  .board-canvas {
-    position: absolute;
-    top: 0; left: 0;
-    padding: 12px 14px;
+    padding: 10px 14px;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    transform-origin: 0 0;
-    will-change: transform;
-    min-width: 100%;
+    overflow-y: auto;
+    min-height: 90px;
   }
   .board-empty {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -251,8 +220,7 @@
     font-size: 14px;
     border: 2px dashed rgba(241,236,219,0.2);
     border-radius: 12px;
-    min-height: 80px;
-    min-width: 200px;
+    min-height: 100px;
   }
   .group-row {
     display: flex;
@@ -291,6 +259,9 @@
     padding: 6px 10px;
     font-size: 12px;
   }
+
+  .tile.locked { opacity: 0.55; cursor: not-allowed; }
+  .tile.locked:active { transform: none; }
 
   /* ---------- 타일 ---------- */
   .tile {
@@ -354,35 +325,27 @@
 
   /* ---------- 손패 ---------- */
   .hand-area {
-    padding: 8px 14px 10px;
+    padding: 8px 14px 12px;
     background: rgba(0,0,0,0.25);
     border-top: 1px solid rgba(241,236,219,0.15);
     flex-shrink: 0;
+    max-height: 50vh;
     display: flex;
     flex-direction: column;
     transition: background .1s ease;
   }
   .hand-area.drag-over { background: rgba(217,160,40,0.1); }
-  .hand-label { font-size: 11px; opacity: .6; flex-shrink: 0; margin-bottom: 2px; }
+  .hand-label { font-size: 11px; opacity: .6; margin-bottom: 4px; flex-shrink: 0; }
   .hand-tiles {
     display: flex;
-    gap: 4px;
-    flex-wrap: nowrap;
-    overflow: visible;
-    padding: 10px 0 4px; /* top pad for selected-lift */
-    position: relative;
-  }
-  .hand-insert-marker {
-    position: absolute;
-    top: 4px;
-    bottom: 0px;
-    width: 3px;
-    border-radius: 2px;
-    background: #ffd76a;
-    box-shadow: 0 0 6px rgba(255, 215, 106, 0.8);
-    pointer-events: none;
-    z-index: 5;
-    transition: left 0.08s ease-out;
+    gap: 6px;
+    flex-wrap: wrap;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    min-height: 46px;
+    padding: 14px 2px 6px; /* 위 패딩: 선택시 타일이 올라가도 안 잘리게 */
+    align-content: flex-start;
   }
 
   /* ---------- 오버레이 ---------- */
@@ -456,152 +419,7 @@
 const COLORS = ["red", "blue", "yellow", "black"];
 const COLOR_HEX = { red: "#C8392B", blue: "#2D5FA8", yellow: "#D9A028", black: "#1F2226" };
 
-// ============ 보드 패닝+줌 ============
-let boardTransform = { x: 0, y: 0, scale: 1 };
-const BOARD_SCALE_MIN = 0.4, BOARD_SCALE_MAX = 2.5;
-let boardCanvasEl = null; // set when building game shell
-
-function applyBoardTransform() {
-  if (!boardCanvasEl) return;
-  boardCanvasEl.style.transform =
-    `translate(${boardTransform.x}px,${boardTransform.y}px) scale(${boardTransform.scale})`;
-}
-
-function resetBoardTransform() {
-  boardTransform = { x: 0, y: 0, scale: 1 };
-  applyBoardTransform();
-}
-
-function clampBoardTransform() {
-  // no hard clamp on pan — let user pan freely
-  boardTransform.scale = Math.max(BOARD_SCALE_MIN, Math.min(BOARD_SCALE_MAX, boardTransform.scale));
-}
-
-function attachBoardPanZoom(areaEl, canvasEl) {
-  boardCanvasEl = canvasEl;
-  applyBoardTransform();
-
-  let pointers = {};
-  let lastPinchDist = null;
-  let panPointerId = null;
-  let panLastPos = null;
-
-  areaEl.addEventListener("pointerdown", (e) => {
-    const isTile = e.target.closest(".tile, .tile-wrap, .btn");
-    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
-    const ids = Object.keys(pointers);
-
-    if (ids.length === 2) {
-      // Start pinch
-      panPointerId = null;
-      const [a, b] = ids.map(id => pointers[id]);
-      lastPinchDist = Math.hypot(a.x - b.x, a.y - b.y);
-    } else if (ids.length === 1 && !isTile) {
-      // Single finger on board background = pan
-      panPointerId = e.pointerId;
-      panLastPos = { x: e.clientX, y: e.clientY };
-      e.preventDefault();
-    }
-  });
-
-  areaEl.addEventListener("pointermove", (e) => {
-    if (!pointers[e.pointerId]) return;
-    const ids = Object.keys(pointers);
-
-    if (ids.length >= 2) {
-      // Pinch zoom
-      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
-      const [a, b] = ids.slice(0, 2).map(id => pointers[id]);
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      if (lastPinchDist && dist > 0) {
-        const ratio = dist / lastPinchDist;
-        const cx = (a.x + b.x) / 2;
-        const cy = (a.y + b.y) / 2;
-        const rect = areaEl.getBoundingClientRect();
-        const lx = cx - rect.left, ly = cy - rect.top;
-        const newScale = Math.max(BOARD_SCALE_MIN, Math.min(BOARD_SCALE_MAX, boardTransform.scale * ratio));
-        const scaleDiff = newScale / boardTransform.scale;
-        boardTransform.x = lx - scaleDiff * (lx - boardTransform.x);
-        boardTransform.y = ly - scaleDiff * (ly - boardTransform.y);
-        boardTransform.scale = newScale;
-        applyBoardTransform();
-        // Also pan (centroid movement)
-        const prevCx = (ids.slice(0,2).map(id => {
-          if (id === String(e.pointerId)) {
-            return pointers[id]; // updated above already
-          }
-          return pointers[id];
-        }));
-      }
-      lastPinchDist = dist;
-
-      // Pan from centroid movement
-      const prevA = pointers[ids[0]], prevB = pointers[ids[1]];
-      // centroid already accounted in pinch above; do pan separately if needed
-    } else if (ids.length === 1 && e.pointerId === panPointerId && panLastPos) {
-      const dx = e.clientX - panLastPos.x;
-      const dy = e.clientY - panLastPos.y;
-      boardTransform.x += dx;
-      boardTransform.y += dy;
-      applyBoardTransform();
-      panLastPos = { x: e.clientX, y: e.clientY };
-      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
-    } else {
-      pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
-    }
-  });
-
-  function endPointer(e) {
-    delete pointers[e.pointerId];
-    lastPinchDist = null;
-    if (e.pointerId === panPointerId) {
-      panPointerId = null;
-      panLastPos = null;
-    }
-  }
-  areaEl.addEventListener("pointerup", endPointer);
-  areaEl.addEventListener("pointercancel", endPointer);
-
-  // Mouse wheel zoom
-  areaEl.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const rect = areaEl.getBoundingClientRect();
-    const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
-    const delta = e.deltaY > 0 ? 0.88 : 1.13;
-    const newScale = Math.max(BOARD_SCALE_MIN, Math.min(BOARD_SCALE_MAX, boardTransform.scale * delta));
-    const scaleDiff = newScale / boardTransform.scale;
-    boardTransform.x = lx - scaleDiff * (lx - boardTransform.x);
-    boardTransform.y = ly - scaleDiff * (ly - boardTransform.y);
-    boardTransform.scale = newScale;
-    applyBoardTransform();
-  }, { passive: false });
-}
-
-function buildBoardZoomControls() {
-  const wrap = h("div", { class: "zoom-controls" });
-  wrap.appendChild(h("button", {
-    class: "zoom-btn",
-    onClick: () => {
-      boardTransform.scale = Math.max(BOARD_SCALE_MIN, boardTransform.scale - 0.15);
-      applyBoardTransform();
-    }
-  }, ["−"]));
-  wrap.appendChild(h("button", {
-    class: "zoom-btn",
-    style: { fontSize: "13px", padding: "0 4px", width: "auto", minWidth: "28px" },
-    onClick: () => { resetBoardTransform(); }
-  }, ["↺"]));
-  wrap.appendChild(h("button", {
-    class: "zoom-btn",
-    onClick: () => {
-      boardTransform.scale = Math.min(BOARD_SCALE_MAX, boardTransform.scale + 0.15);
-      applyBoardTransform();
-    }
-  }, ["+"]));
-  return wrap;
-}
-
-// ============ 손패 타일 줌 ============
+// ============ 확대/축소 ============
 let zoomLevel = 1;
 const ZOOM_MIN = 0.7, ZOOM_MAX = 1.8, ZOOM_STEP = 0.1;
 
@@ -732,52 +550,20 @@ function evaluateGroup(group) {
 
 function evaluateBoard(board) {
   let total = 0;
-  let invalidTileCount = 0;
-  let anyInvalid = false;
   for (const g of board) {
     const res = evaluateGroup(g);
-    if (!res.valid) { anyInvalid = true; invalidTileCount += g.length; }
-    else total += res.value;
+    if (!res.valid) return { valid: false, total: 0 };
+    total += res.value;
   }
-  return { valid: !anyInvalid, total, invalidTileCount };
+  return { valid: true, total };
 }
 
 function computeAddedValue(before, after) {
   const beforeIds = new Set();
   before.forEach(g => g.forEach(t => beforeIds.add(t.id)));
   let sum = 0;
-  after.forEach(g => {
-    const addedIds = new Set(g.filter(t => !beforeIds.has(t.id)).map(t => t.id));
-    if (addedIds.size === 0) return;
-    // 조커는 그 묶음에서 대신하는 실제 숫자만큼 점수가 매겨져야 하므로,
-    // 묶음 전체를 평가해 각 타일이 실제로 어떤 값을 갖는지 구한 뒤
-    // 새로 추가된 타일분만 합산한다.
-    const perTileValue = valuesPerTileInGroup(g);
-    g.forEach((t, i) => { if (addedIds.has(t.id)) sum += perTileValue[i]; });
-  });
+  after.forEach(g => g.forEach(t => { if (!beforeIds.has(t.id)) sum += t.joker ? 0 : t.number; }));
   return sum;
-}
-
-// 묶음(런/그룹) 안의 각 타일이 실제로 갖는 점수값을 배열로 반환.
-// (조커는 대신하는 숫자, 일반 타일은 자신의 숫자)
-function valuesPerTileInGroup(group) {
-  const reals = group.filter(t => !t.joker);
-  if (reals.length === 0) return group.map(() => 0);
-
-  const sameNumber = reals.every(t => t.number === reals[0].number);
-  if (sameNumber && group.length <= 4) {
-    const colorsUsed = new Set(reals.map(t => t.color));
-    if (colorsUsed.size === reals.length) {
-      return group.map(() => reals[0].number);
-    }
-  }
-
-  let leadingJokers = 0;
-  for (const t of group) { if (t.joker) leadingJokers++; else break; }
-  const firstReal = reals[0];
-  let startNumber = firstReal.number - leadingJokers;
-  let cur = startNumber;
-  return group.map(t => { const v = cur; cur++; return v; });
 }
 
 // 이번 턴이 시작되기 "이전부터" 보드에 있던(이미 확정된) 타일인지 판별.
@@ -906,36 +692,7 @@ function materializeCandidate(hand, cand) {
 }
 
 // 그리디로 손패에서 낼 묶음들을 찾음: 가치가 큰 후보부터 충돌 없이 채택
-// 페널티 계산: invalid 묶음에 속한 타일 중 이번 턴에 새로 추가한 것만 카운트.
-// (원래 보드에 있던 타일은 복원되므로 패널티 대상이 아님)
-function countPenaltyTiles(board, snapshot) {
-  const snapshotIds = new Set();
-  if (snapshot) snapshot.forEach(g => g.forEach(t => snapshotIds.add(t.id)));
-  let count = 0;
-  for (const g of board) {
-    if (!evaluateGroup(g).valid) {
-      for (const t of g) {
-        if (!snapshotIds.has(t.id)) count++;
-      }
-    }
-  }
-  return count;
-}
-
-function greedyPick(scored) {
-  const usedHandIdx = new Set();
-  const moves = [];
-  for (const cand of scored) {
-    if (cand.idxSet.some(i => usedHandIdx.has(i))) continue;
-    cand.idxSet.forEach(i => usedHandIdx.add(i));
-    moves.push(cand.tiles);
-  }
-  const usedIds = new Set();
-  moves.forEach(m => m.forEach(t => usedIds.add(t.id)));
-  return { moves, usedIds };
-}
-
-function findBestMoves(hand, aggressive) {
+function findBestMoves(hand) {
   const candidates = enumerateCandidateSets(hand);
   const materialized = candidates.map(c => materializeCandidate(hand, c));
 
@@ -946,18 +703,21 @@ function findBestMoves(hand, aggressive) {
     size: tiles.length,
   })).filter(c => evaluateGroup(c.tiles).valid); // 안전 재검증: invalid는 절대 통과 못함
 
-  const byValue = scored.slice().sort((a, b) => (b.value - a.value) || (b.size - a.size));
-  const byValueResult = greedyPick(byValue);
+  // 가치 내림차순, 동률이면 더 많은 타일을 비우는 쪽 우선
+  scored.sort((a, b) => (b.value - a.value) || (b.size - a.size));
 
-  if (!aggressive) return byValueResult;
+  const usedHandIdx = new Set();
+  const moves = [];
 
-  // 적극 모드: 손패를 최대한 적게 들고 있도록, 개수 우선 그리디도 계산해서
-  // 실제로 더 많은 타일을 비우는 쪽을 선택한다 (단순 정렬 기준 교체는
-  // 그리디 함정으로 오히려 적게 비울 수 있어 두 결과를 비교해 더 나은 쪽을 채택).
-  const bySize = scored.slice().sort((a, b) => (b.size - a.size) || (b.value - a.value));
-  const bySizeResult = greedyPick(bySize);
+  for (const cand of scored) {
+    if (cand.idxSet.some(i => usedHandIdx.has(i))) continue;
+    cand.idxSet.forEach(i => usedHandIdx.add(i));
+    moves.push(cand.tiles);
+  }
 
-  return bySizeResult.usedIds.size >= byValueResult.usedIds.size ? bySizeResult : byValueResult;
+  const usedIds = new Set();
+  moves.forEach(m => m.forEach(t => usedIds.add(t.id)));
+  return { moves, usedIds };
 }
 
 // 손패의 남은 타일들을 보드의 기존 그룹에 이어붙일 수 있는지 시도 (그룹 확장)
@@ -1024,156 +784,78 @@ function h(tag, attrs, children) {
   return el;
 }
 
-// ============ 포인터 기반 드래그앤드롭 (롱프레스=드래그, 탭=선택) ============
-let activeDrag = null;
-const DRAG_THRESHOLD = 8;
-const LONG_PRESS_MS = 350; // ms before drag starts on mobile
+// ============ 포인터 기반 드래그앤드롭 (마우스+터치 공용) ============
+// 네이티브 HTML5 DnD는 터치 기기에서 동작하지 않으므로, Pointer Events로
+// 직접 드래그 고스트를 그리고 드롭 대상을 elementFromPoint로 판별한다.
+let activeDrag = null; // { tileId, lastZone }
+const DRAG_THRESHOLD = 6; // px, 이 이상 움직여야 "드래그"로 인정 (그 이하는 탭으로 처리)
 
 function findDropZone(x, y) {
   const target = document.elementFromPoint(x, y);
   if (!target) return null;
+  // 고스트는 pointer-events:none이라 elementFromPoint가 자동으로 통과시킴
   return target.closest(".group-row, .new-group-drop, .hand-area");
-}
-
-// 손패 영역 안에서 x좌표 기준으로 "이 타일들 사이에 끼워넣겠다"는 삽입 인덱스를 계산.
-// 각 타일의 중심 x좌표와 비교해 가장 가까운 틈을 찾는다.
-function findHandInsertIndex(handTilesEl, x, excludeTileId) {
-  const tiles = Array.from(handTilesEl.querySelectorAll(":scope > .tile, :scope > .tile-wrap"))
-    .filter(el => el.dataset.tileId !== excludeTileId);
-  if (tiles.length === 0) return 0;
-  for (let i = 0; i < tiles.length; i++) {
-    const rect = tiles[i].getBoundingClientRect();
-    const mid = rect.left + rect.width / 2;
-    if (x < mid) return i;
-  }
-  return tiles.length;
 }
 
 function makeDraggableTile(el, tileId, onTap) {
   el.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
-    e.stopPropagation();
     const pointerId = e.pointerId;
     const startX = e.clientX, startY = e.clientY;
-    let curX = startX, curY = startY;
-    const rect0 = el.getBoundingClientRect();
-    const offsetX = startX - rect0.left, offsetY = startY - rect0.top;
-
-    let wasDragging = false;
+    const rect = el.getBoundingClientRect();
+    const offsetX = startX - rect.left, offsetY = startY - rect.top;
+    let moved = false;
     let ghost = null;
-    let longPressTimer = null;
-    let dragEnabled = (e.pointerType === "mouse");
 
-    function createGhost(px, py) {
-      ghost = el.cloneNode(true);
-      ghost.style.cssText = "position:fixed;margin:0;z-index:999;pointer-events:none;opacity:0.92;" +
-        "box-shadow:0 8px 24px rgba(0,0,0,.5);transform:scale(1.12);transition:none;" +
-        "left:" + (px - offsetX) + "px;top:" + (py - offsetY) + "px";
-      ghost.classList.remove("selected");
-      document.body.appendChild(ghost);
-      el.classList.add("dragging");
-    }
-
-    function moveGhost(px, py) {
-      if (!ghost) return;
-      ghost.style.left = (px - offsetX) + "px";
-      ghost.style.top  = (py - offsetY) + "px";
-    }
-
-    function clearInsertMarker() {
-      if (activeDrag && activeDrag.markerEl) {
-        activeDrag.markerEl.remove();
-        activeDrag.markerEl = null;
+    function onMove(ev) {
+      if (ev.pointerId !== pointerId) return;
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (!moved) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        moved = true;
+        ghost = el.cloneNode(true);
+        ghost.style.position = "fixed";
+        ghost.style.left = rect.left + "px";
+        ghost.style.top = rect.top + "px";
+        ghost.style.margin = "0";
+        ghost.style.zIndex = "999";
+        ghost.style.pointerEvents = "none";
+        ghost.style.opacity = "0.95";
+        ghost.style.boxShadow = "0 8px 20px rgba(0,0,0,.45)";
+        ghost.style.transform = "scale(1.08)";
+        ghost.classList.remove("selected");
+        document.body.appendChild(ghost);
+        el.classList.add("dragging");
       }
-    }
-
-    function updateZone(px, py) {
-      if (!activeDrag) return;
-      const zone = findDropZone(px, py);
+      ghost.style.left = (ev.clientX - offsetX) + "px";
+      ghost.style.top = (ev.clientY - offsetY) + "px";
+      const zone = findDropZone(ev.clientX, ev.clientY);
       if (zone !== activeDrag.lastZone) {
         if (activeDrag.lastZone) activeDrag.lastZone.classList.remove("drag-over");
         if (zone) zone.classList.add("drag-over");
         activeDrag.lastZone = zone;
       }
-
-      // 손패 영역 안이면 타일 사이 정확한 삽입 위치를 계산해 표시선을 보여준다.
-      if (zone && zone.classList.contains("hand-area")) {
-        const handTilesEl = zone.querySelector(".hand-tiles");
-        if (handTilesEl) {
-          const idx = findHandInsertIndex(handTilesEl, px, tileId);
-          activeDrag.insertIndex = idx;
-          if (!activeDrag.markerEl) {
-            activeDrag.markerEl = document.createElement("div");
-            activeDrag.markerEl.className = "hand-insert-marker";
-            handTilesEl.appendChild(activeDrag.markerEl);
-          }
-          const tiles = Array.from(handTilesEl.querySelectorAll(":scope > .tile, :scope > .tile-wrap"))
-            .filter(elx => elx.dataset.tileId !== tileId);
-          const containerRect = handTilesEl.getBoundingClientRect();
-          let leftPx;
-          if (tiles.length === 0) {
-            leftPx = 0;
-          } else if (idx === 0) {
-            leftPx = tiles[0].getBoundingClientRect().left - containerRect.left - 4;
-          } else if (idx >= tiles.length) {
-            const last = tiles[tiles.length - 1].getBoundingClientRect();
-            leftPx = last.right - containerRect.left + 1;
-          } else {
-            leftPx = tiles[idx].getBoundingClientRect().left - containerRect.left - 4;
-          }
-          activeDrag.markerEl.style.left = leftPx + "px";
-        }
-      } else {
-        activeDrag.insertIndex = null;
-        clearInsertMarker();
-      }
-    }
-
-    function onMove(ev) {
-      if (ev.pointerId !== pointerId) return;
-      curX = ev.clientX; curY = ev.clientY;
-      const dist = Math.hypot(curX - startX, curY - startY);
-
-      if (!wasDragging) {
-        if (!dragEnabled) {
-          if (dist > DRAG_THRESHOLD) {
-            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-            cleanup(); return;
-          }
-          return;
-        }
-        if (dist < DRAG_THRESHOLD) return;
-        wasDragging = true;
-        createGhost(curX, curY);
-      }
-
-      moveGhost(curX, curY);
-      updateZone(curX, curY);
     }
 
     function cleanup() {
-      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       el.classList.remove("dragging");
       if (ghost) { ghost.remove(); ghost = null; }
-      clearInsertMarker();
     }
 
     function onUp(ev) {
       if (ev.pointerId !== pointerId) return;
-      const didDrag = wasDragging;
       const zone = activeDrag ? activeDrag.lastZone : null;
-      const insertIndex = activeDrag ? activeDrag.insertIndex : null;
       cleanup();
       if (zone) zone.classList.remove("drag-over");
       activeDrag = null;
-      if (didDrag) {
-        if (zone && zone._dropHandler) zone._dropHandler(tileId, insertIndex);
-      } else {
-        if (onTap) onTap();
+      if (moved) {
+        if (zone && zone._dropHandler) zone._dropHandler(tileId);
+      } else if (onTap) {
+        onTap();
       }
     }
 
@@ -1188,19 +870,6 @@ function makeDraggableTile(el, tileId, onTap) {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
-
-    if (e.pointerType !== "mouse") {
-      longPressTimer = setTimeout(() => {
-        longPressTimer = null;
-        if (!wasDragging) {
-          dragEnabled = true;
-          wasDragging = true;
-          createGhost(curX, curY);
-          updateZone(curX, curY);
-          if (navigator.vibrate) navigator.vibrate(40);
-        }
-      }, LONG_PRESS_MS);
-    }
   });
 }
 
@@ -1210,21 +879,22 @@ function tileEl(tile, opts) {
   const classes = ["tile"];
   if (opts.small) classes.push("small");
   if (opts.selected) classes.push("selected");
+  if (opts.locked) classes.push("locked");
 
   const tile_el = h("div", {
     class: classes.join(" "),
     style: { color },
-    "data-tile-id": tile.id
+    title: opts.locked ? "이전 턴에 낸 패 (이동 불가)" : undefined
   }, [tile.joker ? "★" : String(tile.number)]);
 
-  if (opts.draggable) {
+  if (opts.draggable && !opts.locked) {
     makeDraggableTile(tile_el, tile.id, opts.onClick);
   } else if (opts.onClick) {
     tile_el.addEventListener("click", opts.onClick);
   }
 
   if (opts.orderNum != null) {
-    const wrap = h("div", { class: "tile-wrap", "data-tile-id": tile.id });
+    const wrap = h("div", { class: "tile-wrap" });
     wrap.appendChild(tile_el);
     wrap.appendChild(h("div", { class: "order-badge" }, [String(opts.orderNum)]));
     return wrap;
@@ -1244,59 +914,15 @@ function btn(label, cls, onClick, disabled) {
 const App = document.getElementById("app");
 let state = { screen: "lobby" };
 
-// ---- AI 레벨 시스템 ----
-// 이겨도 +1, 져도 -1 (0 미만으로는 내려가지 않음). 레벨이 높을수록 AI가 손패를 더 적극적으로(많이) 냄.
-let aiLevel = 0;
-let aiLevelLoaded = false;
-
-function aiAggressive() { return aiLevel >= 3; } // 레벨 3부터 "타일 개수 우선" 그리디로 전환
-
-async function loadAiLevel() {
-  if (aiLevelLoaded) return;
-  aiLevelLoaded = true;
-  try {
-    if (window.storage) {
-      const res = await window.storage.get("ai-level", false);
-      if (res && typeof res.value !== "undefined") {
-        const n = parseInt(res.value, 10);
-        if (!isNaN(n)) aiLevel = n;
-      }
-    }
-  } catch (e) {
-    // 저장된 값 없음 또는 storage 미지원: 0부터 시작
-  }
-}
-
-async function saveAiLevel() {
-  try {
-    if (window.storage) await window.storage.set("ai-level", String(aiLevel), false);
-  } catch (e) {
-    // 저장 실패해도 게임 진행에는 영향 없음 (이번 세션 동안은 메모리 값 유지)
-  }
-}
-
-function bumpAiLevel(delta) {
-  aiLevel = Math.max(0, aiLevel + delta);
-  saveAiLevel();
-}
-
 function render() {
   clearTurnTimer();
-  boardCanvasEl = null; // reset board canvas ref
   App.innerHTML = "";
   if (state.screen === "lobby") App.appendChild(renderLobby());
   else if (state.screen === "ai") App.appendChild(renderAIGame());
   else if (state.screen === "local") App.appendChild(renderLocalGame());
-  else if (state.screen === "online") App.appendChild(renderOnlineGame());
-}
-
-async function renderAsync() {
-  await loadAiLevel();
-  render();
 }
 
 function goLobby() {
-  teardownOnlineConnection();
   state = { screen: "lobby" };
   render();
 }
@@ -1305,7 +931,7 @@ function goLobby() {
 function renderLobby() {
   const wrap = h("div", { class: "screen center-screen" });
   wrap.appendChild(h("div", { class: "logo" }, ["루미큐브 ", h("span", { class: "accent" }, ["RUMMIKUB"])]));
-  wrap.appendChild(h("div", { class: "subtitle" }, ["AI와 대전하거나, 같은 화면 또는 온라인으로 친구와 플레이하세요"]));
+  wrap.appendChild(h("div", { class: "subtitle" }, ["AI와 대전하거나, 같은 화면에서 친구와 번갈아 플레이하세요"]));
 
   const box = h("div", { class: "lobby-box" });
 
@@ -1331,9 +957,6 @@ function renderLobby() {
   const aiCard = h("div", { class: "mode-card" });
   aiCard.appendChild(h("div", { class: "mode-card-title" }, ["🤖 AI와 대전"]));
   aiCard.appendChild(h("div", { class: "mode-card-desc" }, ["혼자서 AI를 상대로 플레이합니다."]));
-  aiCard.appendChild(h("div", {
-    style: { fontWeight: "700", fontSize: "14px", margin: "4px 0 10px", color: "#ffd76a" }
-  }, ["⭐ 현재 AI 레벨: " + aiLevel + (aiAggressive() ? " (적극 모드)" : "")]));
   aiCard.appendChild(btn("AI 대전 시작", "btn-green btn-big", () => {
     state = { screen: "ai" };
     render();
@@ -1362,40 +985,17 @@ function renderLobby() {
   }));
   box.appendChild(localCard);
 
-  // 온라인 1:1 대전
-  const onlineCard = h("div", { class: "mode-card" });
-  onlineCard.appendChild(h("div", { class: "mode-card-title" }, ["🌐 온라인 1:1 대전"]));
-  onlineCard.appendChild(h("div", { class: "mode-card-desc" }, [
-    "방을 만들어 코드를 친구에게 공유하거나, 받은 코드로 친구 방에 들어가세요. 같은 와이파이가 아니어도 됩니다."
-  ]));
-
-  const myNameInput = h("input", { class: "text-input", placeholder: "내 닉네임" });
-  onlineCard.appendChild(h("div", { style: { marginBottom: "10px" } }, [myNameInput]));
-
-  const onlineRow = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } });
-  onlineRow.appendChild(btn("방 만들기 (호스트)", "btn-green", () => {
-    const myName = myNameInput.value.trim() || "나";
-    state = { screen: "online", role: "host", myName };
-    render();
-  }));
-  const joinCodeInput = h("input", { class: "text-input", placeholder: "받은 방 코드 입력", style: { flex: "1 1 140px" } });
-  onlineRow.appendChild(joinCodeInput);
-  onlineRow.appendChild(btn("방 참가하기", "btn-blue", () => {
-    const myName = myNameInput.value.trim() || "나";
-    const code = joinCodeInput.value.trim();
-    if (!code) { toast("방 코드를 입력해주세요."); return; }
-    state = { screen: "online", role: "guest", myName, joinCode: code };
-    render();
-  }));
-  onlineCard.appendChild(onlineRow);
-  box.appendChild(onlineCard);
-
   wrap.appendChild(box);
   return wrap;
 }
 
 // ============ 공통 게임 셸 빌더 ============
 function buildGameShell(opts) {
+  // opts: title, subtitle, message, tone('go'|'wait'), boardValid, board, hand(순서 그대로, 자동정렬 안함),
+  // selectedOrder(array of ids in selection order), onToggleSelect, onReturnTile, onAddToGroup, canInteract,
+  // onExit, controlsEls(array), winnerOverlayEl(or null),
+  // onDropToGroup(gi, tileId, fromHand), onDropToNewGroup(tileId, fromHand),
+  // onDropToHand(tileId), onReorderHand(draggedId, targetId), onSortHand
   const wrap = h("div", { class: "screen" });
   const selectedSet = new Set(opts.selectedOrder);
 
@@ -1407,9 +1007,6 @@ function buildGameShell(opts) {
 
   const headerRight = h("div", { class: "header-right" });
   if (opts.timerEl) headerRight.appendChild(opts.timerEl);
-  // Board zoom controls (pan/zoom of board canvas)
-  headerRight.appendChild(buildBoardZoomControls());
-  // Tile size zoom
   headerRight.appendChild(buildZoomControls());
   headerRight.appendChild(btn("나가기", "btn-purple", opts.onExit));
   header.appendChild(headerRight);
@@ -1422,44 +1019,41 @@ function buildGameShell(opts) {
   if (!opts.boardValid) {
     msgBar.appendChild(h("span", { class: "warn-text" }, ["⚠ 유효하지 않은 묶음이 있습니다"]));
   }
-  // Pan hint
-  const panHint = h("span", { style: { fontSize: "11px", opacity: "0.5", marginLeft: "auto" } },
-    ["핀치/휠로 줌 · 2손가락으로 패닝"]);
-  msgBar.appendChild(panHint);
   wrap.appendChild(msgBar);
 
-  // Board area with pannable/zoomable canvas
   const boardArea = h("div", { class: "board-area" });
-  const boardCanvas = h("div", { class: "board-canvas" });
 
   if (opts.board.length === 0) {
-    boardCanvas.appendChild(h("div", { class: "board-empty" }, ["보드가 비어있습니다"]));
+    boardArea.appendChild(h("div", { class: "board-empty" }, ["보드가 비어있습니다"]));
   } else {
     opts.board.forEach((group, gi) => {
       const valid = evaluateGroup(group).valid;
       const row = h("div", { class: "group-row" + (valid ? "" : " invalid") });
       if (opts.canInteract) row._dropHandler = (tileId) => opts.onDropToGroup(gi, tileId);
-      group.forEach((tile, ti) => {
+      group.forEach((tile) => {
+        const orderIdx = opts.selectedOrder.indexOf(tile.id);
+        const isLocked = opts.lockedIds && opts.lockedIds.has(tile.id);
         row.appendChild(tileEl(tile, {
-          onClick: () => opts.onReturnTile(gi, ti),
-          draggable: opts.canInteract,
+          selected: orderIdx !== -1,
+          orderNum: orderIdx !== -1 && opts.selectedOrder.length > 1 ? orderIdx + 1 : null,
+          locked: isLocked,
+          onClick: () => { if (opts.canInteract) opts.onToggleSelect(tile.id); },
+          draggable: opts.canInteract && !isLocked,
         }));
       });
       if (selectedSet.size > 0 && opts.canInteract) {
-        row.appendChild(btn("+ 추가 (" + selectedSet.size + ")", "btn-blue add-here-btn", () => opts.onAddToGroup(gi)));
+        row.appendChild(btn("+ 여기에 추가", "btn-blue add-here-btn", () => opts.onAddToGroup(gi)));
       }
-      boardCanvas.appendChild(row);
+      boardArea.appendChild(row);
     });
   }
 
   if (opts.canInteract) {
     const newGroupDrop = h("div", { class: "new-group-drop" }, ["+ 여기로 드래그하면 새 묶음이 됩니다"]);
     newGroupDrop._dropHandler = (tileId) => opts.onDropToNewGroup(tileId);
-    boardCanvas.appendChild(newGroupDrop);
+    boardArea.appendChild(newGroupDrop);
   }
 
-  boardArea.appendChild(boardCanvas);
-  attachBoardPanZoom(boardArea, boardCanvas);
   wrap.appendChild(boardArea);
 
   const controlBar = h("div", { class: "control-bar" });
@@ -1467,58 +1061,30 @@ function buildGameShell(opts) {
   wrap.appendChild(controlBar);
 
   const handArea = h("div", { class: "hand-area" });
-  if (opts.canInteract) handArea._dropHandler = (tileId, insertIndex) => opts.onDropToHand(tileId, insertIndex);
-  const labelRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: "0", marginBottom: "4px" } });
-  labelRow.appendChild(h("div", { class: "hand-label" }, ["내 손패 (" + opts.hand.length + "개) · 탭=선택 · 길게누름=드래그"]));
+  if (opts.canInteract) handArea._dropHandler = (tileId) => opts.onDropToHand(tileId);
+  const labelRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: "0" } });
+  labelRow.appendChild(h("div", { class: "hand-label" }, ["내 손패 (" + opts.hand.length + "개) · 탭=선택, 드래그=이동"]));
   if (opts.onSortHand) {
-    const sortLabel = opts.sortMode === "number" ? "🔢 숫자순 (탭→색상순)" :
-                      opts.sortMode === "manual"  ? "✋ 수동 (탭→색상순)" :
-                                                   "🎨 색상순 (탭→숫자순)";
     const sortBtn = h("button", {
       class: "btn btn-yellow",
       style: { padding: "5px 12px", fontSize: "12px", flexShrink: "0", fontWeight: "700" },
       onClick: opts.onSortHand
-    }, [sortLabel]);
+    }, ["🔢 색깔·숫자별 정렬"]);
     labelRow.appendChild(sortBtn);
   }
   handArea.appendChild(labelRow);
 
-  // Auto-scale hand tiles to fit screen width using CSS zoom
   const handTiles = h("div", { class: "hand-tiles" });
-  if (opts.canInteract) {
-    handTiles._dropHandler = (tileId, insertIndex) => opts.onDropToHand(tileId, insertIndex);
-  }
-
   opts.hand.forEach(tile => {
     const orderIdx = opts.selectedOrder.indexOf(tile.id);
-    const tileWrapper = tileEl(tile, {
+    handTiles.appendChild(tileEl(tile, {
       selected: orderIdx !== -1,
       orderNum: orderIdx !== -1 && opts.selectedOrder.length > 1 ? orderIdx + 1 : null,
       onClick: () => { if (opts.canInteract) opts.onToggleSelect(tile.id); },
       draggable: opts.canInteract,
-    });
-    handTiles.appendChild(tileWrapper);
+    }));
   });
   handArea.appendChild(handTiles);
-
-  // After DOM insertion, apply zoom to fit all tiles in one row
-  requestAnimationFrame(() => {
-    const availW = handArea.offsetWidth - 28;
-    const isMobile = window.innerWidth <= 480;
-    const baseTileW = (isMobile ? 38 : 32) * zoomLevel;
-    const baseGap = 4;
-    const count = opts.hand.length;
-    if (count > 0 && availW > 0) {
-      const needed = count * baseTileW + (count - 1) * baseGap;
-      if (needed > availW) {
-        const scale = Math.max(0.42, availW / needed);
-        handTiles.style.zoom = scale.toFixed(3);
-      } else {
-        handTiles.style.zoom = "";
-      }
-    }
-  });
-
   wrap.appendChild(handArea);
 
   if (opts.winnerOverlayEl) wrap.appendChild(opts.winnerOverlayEl);
@@ -1548,23 +1114,11 @@ function toast(msg) {
 // ============ AI 대전 모드 ============
 let aiState = null;
 
-function sortTilesByColor(tiles) {
+function sortTiles(tiles) {
   return tiles.slice().sort((a, b) => {
     if (a.joker !== b.joker) return a.joker ? 1 : -1;
     return a.color.localeCompare(b.color) || a.number - b.number;
   });
-}
-
-function sortTilesByNumber(tiles) {
-  return tiles.slice().sort((a, b) => {
-    if (a.joker !== b.joker) return a.joker ? 1 : -1;
-    return a.number - b.number || a.color.localeCompare(b.color);
-  });
-}
-
-// 하위 호환: 기존 호출부(초기 배분 등)는 색별 정렬을 기본으로 사용
-function sortTiles(tiles) {
-  return sortTilesByColor(tiles);
 }
 
 function newAIState() {
@@ -1573,7 +1127,6 @@ function newAIState() {
     pool: deck.slice(28),
     hand: sortTiles(deck.slice(0, 14)),
     aiHand: deck.slice(14, 28),
-    sortMode: "color",
     board: [],
     snapshot: null,
     snapshotHand: null,
@@ -1600,24 +1153,55 @@ function renderAIGame() {
 
   function toggleSelect(id) {
     if (s.turn !== "player" || s.winner) return;
+    // 보드 위 타일이면 잠금 여부 먼저 확인
+    const isOnBoard = s.board.some(g => g.some(t => t.id === id));
+    if (isOnBoard && isLockedTile(s.snapshot, s.board, id)) {
+      toast("이전 턴에 이미 낸 패는 선택할 수 없습니다.");
+      return;
+    }
     const idx = s.selectedOrder.indexOf(id);
     if (idx !== -1) s.selectedOrder.splice(idx, 1);
     else s.selectedOrder.push(id);
     render();
   }
 
-  function takeSelectedFromHand() {
-    // selectedOrder 순서를 보존하며 손패에서 추출
-    const tiles = s.selectedOrder.map(id => s.hand.find(t => t.id === id)).filter(Boolean);
-    s.hand = s.hand.filter(t => !s.selectedOrder.includes(t.id));
+  // 손패 + 보드에서 선택된 타일 모두 수거
+  function takeAllSelected() {
+    const idSet = new Set(s.selectedOrder);
+    const orderMap = {};
+    s.selectedOrder.forEach((id, i) => orderMap[id] = i);
+    const tiles = [];
+    s.hand = s.hand.filter(t => { if (idSet.has(t.id)) { tiles.push(t); return false; } return true; });
+    for (let gi = 0; gi < s.board.length; gi++) {
+      s.board[gi] = s.board[gi].filter(t => { if (idSet.has(t.id)) { tiles.push(t); return false; } return true; });
+    }
+    s.board = s.board.filter(g => g.length > 0);
     s.selectedOrder = [];
+    tiles.sort((a, b) => (orderMap[a.id] ?? 999) - (orderMap[b.id] ?? 999));
     return tiles;
+  }
+
+  function returnSelectedToHand() {
+    if (s.selectedOrder.length === 0) return;
+    const idSet = new Set(s.selectedOrder);
+    const toReturn = [];
+    ensureSnapshot();
+    for (let gi = 0; gi < s.board.length; gi++) {
+      s.board[gi] = s.board[gi].filter(t => {
+        if (idSet.has(t.id)) { toReturn.push(t); return false; }
+        return true;
+      });
+    }
+    s.board = s.board.filter(g => g.length > 0);
+    s.selectedOrder = [];
+    s.hand.push(...toReturn);
+    render();
   }
 
   function playSelectedAsNewGroup() {
     if (s.selectedOrder.length === 0) return;
     ensureSnapshot();
-    const tiles = takeSelectedFromHand();
+    const tiles = takeAllSelected();
     s.board.push(autoArrangeGroup(tiles));
     render();
   }
@@ -1625,8 +1209,36 @@ function renderAIGame() {
   function addToGroup(gi) {
     if (s.selectedOrder.length === 0) return;
     ensureSnapshot();
-    const tiles = takeSelectedFromHand();
-    s.board[gi] = autoArrangeGroup(s.board[gi].concat(tiles));
+    const idSet = new Set(s.selectedOrder);
+    const orderMap = {};
+    s.selectedOrder.forEach((id, i) => orderMap[id] = i);
+    const toAdd = [];
+    const targetGroup = s.board[gi];
+    s.hand = s.hand.filter(t => { if (idSet.has(t.id)) { toAdd.push(t); return false; } return true; });
+    for (let i = 0; i < s.board.length; i++) {
+      if (s.board[i] === targetGroup) continue;
+      s.board[i] = s.board[i].filter(t => { if (idSet.has(t.id)) { toAdd.push(t); return false; } return true; });
+    }
+    s.board = s.board.filter(g => g.length > 0 || g === targetGroup);
+    const newGi = s.board.indexOf(targetGroup);
+    toAdd.sort((a, b) => (orderMap[a.id] ?? 999) - (orderMap[b.id] ?? 999));
+    if (newGi !== -1) s.board[newGi] = autoArrangeGroup(targetGroup.concat(toAdd));
+    else s.board.push(autoArrangeGroup(toAdd));
+    s.selectedOrder = [];
+    render();
+  }
+
+  function returnSelectedToHand() {
+    if (s.selectedOrder.length === 0) return;
+    const idSet = new Set(s.selectedOrder);
+    const toReturn = [];
+    ensureSnapshot();
+    for (let gi = 0; gi < s.board.length; gi++) {
+      s.board[gi] = s.board[gi].filter(t => { if (idSet.has(t.id)) { toReturn.push(t); return false; } return true; });
+    }
+    s.board = s.board.filter(g => g.length > 0);
+    s.selectedOrder = [];
+    s.hand.push(...toReturn);
     render();
   }
 
@@ -1692,37 +1304,22 @@ function renderAIGame() {
     render();
   }
 
-  function dropToHand(tileId, insertIndex) {
+  function dropToHand(tileId) {
     if (s.turn !== "player" || s.winner) return;
     const inHandIdx = s.hand.findIndex(t => t.id === tileId);
-    if (inHandIdx !== -1) {
-      // 손패 안에서 드래그로 순서만 재배치
-      if (insertIndex == null) return;
-      const [moved] = s.hand.splice(inHandIdx, 1);
-      let idx = insertIndex;
-      if (inHandIdx < insertIndex) idx -= 1; // 자기 자신을 빼고 난 뒤의 인덱스 보정
-      idx = Math.max(0, Math.min(idx, s.hand.length));
-      s.hand.splice(idx, 0, moved);
-      s.sortMode = "manual";
-      render();
-      return;
-    }
+    if (inHandIdx !== -1) return; // 이미 손패
     if (isLockedTile(s.snapshot, s.board, tileId)) {
       toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
       return;
     }
     ensureSnapshot();
     const tile = removeTileFromBoardById(tileId);
-    if (tile) {
-      if (insertIndex == null || insertIndex >= s.hand.length) s.hand.push(tile);
-      else s.hand.splice(insertIndex, 0, tile);
-    }
+    if (tile) s.hand.push(tile);
     render();
   }
 
   function sortHand() {
-    s.sortMode = s.sortMode === "color" ? "number" : "color"; // manual → color, number → color, color → number
-    s.hand = s.sortMode === "color" ? sortTilesByColor(s.hand) : sortTilesByNumber(s.hand);
+    s.hand = sortTiles(s.hand);
     render();
   }
 
@@ -1747,7 +1344,7 @@ function renderAIGame() {
       s.snapshot = null; s.snapshotHand = null;
     }
     const t = s.pool.shift();
-    s.hand = (s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor)(s.hand.concat([t]));
+    s.hand = sortTiles(s.hand.concat([t]));
     s.message = "타일을 뽑았습니다. AI 차례로 넘어갑니다.";
     s.turn = "ai";
     s.selectedOrder = [];
@@ -1767,7 +1364,6 @@ function renderAIGame() {
     }
     if (s.hand.length === 0) {
       s.winner = "player";
-      bumpAiLevel(1);
       render();
       return;
     }
@@ -1780,7 +1376,7 @@ function renderAIGame() {
   }
 
   function runAiTurn() {
-    const { moves, usedIds } = findBestMoves(s.aiHand, aiAggressive());
+    const { moves, usedIds } = findBestMoves(s.aiHand);
     let newBoard = s.board.map(g => g.slice());
     let remaining = s.aiHand.filter(t => !usedIds.has(t.id));
     let played = false;
@@ -1812,7 +1408,6 @@ function renderAIGame() {
       s.aiHand = remaining;
       if (remaining.length === 0) {
         s.winner = "ai";
-        bumpAiLevel(-1);
         render();
         return;
       }
@@ -1830,83 +1425,62 @@ function renderAIGame() {
     render();
   }
 
-  const boardEval = evaluateBoard(s.board);
-  const boardValid = boardEval.valid;
+  const boardValid = evaluateBoard(s.board).valid;
 
-  function applyPenalty() {
-    const penaltyCount = countPenaltyTiles(s.board, s.snapshot);
-    if (s.snapshot) {
-      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
-      s.hand = s.snapshotHand.map(t => Object.assign({}, t));
-      s.snapshot = null; s.snapshotHand = null;
-    }
-    const penalty = 3 + penaltyCount;
-    const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
-    const fn = s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor;
-    s.hand = s.sortMode === "manual" ? s.hand.concat(drawn) : fn(s.hand.concat(drawn));
-    s.penaltyMode = false;
-    s.selectedOrder = [];
-    s.message = "페널티: 타일 " + drawn.length + "개를 가져왔습니다. AI 차례입니다.";
-    s.turn = "ai";
-    s.turnDeadline = null;
-    render();
-    setTimeout(runAiTurn, 900);
-  }
+  // 보드 위 타일 중 잠긴(이전 턴) 타일 ID 집합
+  const lockedIds = new Set();
+  s.board.forEach(group => group.forEach(tile => {
+    if (isLockedTile(s.snapshot, s.board, tile.id)) lockedIds.add(tile.id);
+  }));
 
-  const controls = s.penaltyMode
-    ? [
-        btn("그만 (패널티 적용)", "btn-red btn-big", applyPenalty, false),
-      ]
-    : [
-        btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
-          playSelectedAsNewGroup, s.selectedOrder.length === 0 || s.turn !== "player" || !!s.winner),
-        btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || s.turn !== "player" || !!s.winner),
-        btn("타일 뽑기", "btn-purple", drawTile, s.turn !== "player" || !!s.winner),
-        btn("턴 종료 ✓", "btn-yellow", endTurn, s.turn !== "player" || !!s.winner)
-      ];
+  // 선택된 타일 중 보드 타일 수
+  const boardSelectedCount = s.selectedOrder.filter(id => s.board.some(g => g.some(t => t.id === id))).length;
+
+  const controls = [
+    btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
+      playSelectedAsNewGroup, s.selectedOrder.length === 0 || s.turn !== "player" || !!s.winner),
+    boardSelectedCount > 0
+      ? btn("선택 보드→손패 (" + boardSelectedCount + ")", "btn-purple", returnSelectedToHand, s.turn !== "player" || !!s.winner)
+      : btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || s.turn !== "player" || !!s.winner),
+    btn("타일 뽑기", "btn-purple", drawTile, s.turn !== "player" || !!s.winner || boardSelectedCount > 0),
+    btn("턴 종료 ✓", "btn-yellow", endTurn, s.turn !== "player" || !!s.winner)
+  ];
 
   let overlayEl = null;
   if (s.winner) {
     overlayEl = winnerOverlay(
       s.winner === "player" ? "🏆" : "🤖",
-      s.winner === "player"
-        ? "승리했습니다! 🎉 (AI 레벨 ↑ → " + aiLevel + ")"
-        : "AI가 승리했습니다 (AI 레벨 ↓ → " + aiLevel + ")",
+      s.winner === "player" ? "승리했습니다! 🎉" : "AI가 승리했습니다",
       () => { aiState = newAIState(); render(); },
       goLobby
     );
   }
 
   let timerEl = null;
-  if (s.turn === "player" && !s.winner && s.turnDeadline && !s.penaltyMode) {
+  if (s.turn === "player" && !s.winner && s.turnDeadline) {
     timerEl = buildTimerBadge(s.turnDeadline, () => {
-      // 시간 초과 → 페널티 정리 모드 진입
-      s.penaltyMode = true;
-      s.turnDeadline = null;
-      s.message = "⏰ 시간 초과! 보드를 최대한 정리하고 '그만' 버튼을 누르세요. (기본 3개 + 미완성 타일 수만큼 페널티)";
-      render();
+      toast("시간 초과! 타일을 뽑습니다.");
+      drawTile();
     });
   }
 
   return buildGameShell({
     title: "루미큐브 · AI 대전",
-    subtitle: "⭐ AI 레벨 " + aiLevel + (aiAggressive() ? " (적극 모드)" : "") +
-      " · 풀 " + s.pool.length + "개 · AI 패 " + s.aiHand.length + "개",
+    subtitle: "풀 " + s.pool.length + "개 · AI 패 " + s.aiHand.length + "개",
     message: s.message,
     tone: s.turn === "ai" ? "wait" : "go",
     boardValid,
     board: s.board,
     hand: s.hand,
     selectedOrder: s.selectedOrder,
+    lockedIds,
     onToggleSelect: toggleSelect,
-    onReturnTile: returnTile,
     onAddToGroup: addToGroup,
     onDropToGroup: dropToGroup,
     onDropToNewGroup: dropToNewGroup,
     onDropToHand: dropToHand,
     onSortHand: sortHand,
-    sortMode: s.sortMode,
-    canInteract: (s.turn === "player" || s.penaltyMode) && !s.winner,
+    canInteract: s.turn === "player" && !s.winner,
     onExit: goLobby,
     controlsEls: controls,
     winnerOverlayEl: overlayEl,
@@ -1923,7 +1497,6 @@ function newLocalState(names) {
     names,
     pool: deck.slice(28),
     hands: [sortTiles(deck.slice(0, 14)), sortTiles(deck.slice(14, 28))],
-    sortModes: ["color", "color"],
     board: [],
     snapshot: null,
     snapshotHand: null,
@@ -1955,24 +1528,51 @@ function renderLocalGame() {
 
   function toggleSelect(id) {
     if (s.winner) return;
+    const isOnBoard = s.board.some(g => g.some(t => t.id === id));
+    if (isOnBoard && isLockedTile(s.snapshot, s.board, id)) {
+      toast("이전 턴에 이미 낸 패는 선택할 수 없습니다.");
+      return;
+    }
     const idx = s.selectedOrder.indexOf(id);
     if (idx !== -1) s.selectedOrder.splice(idx, 1);
     else s.selectedOrder.push(id);
     render();
   }
 
-  function takeSelectedFromHand() {
+  function takeAllSelected() {
     const hand = s.hands[s.turn];
-    const tiles = s.selectedOrder.map(id => hand.find(t => t.id === id)).filter(Boolean);
-    s.hands[s.turn] = hand.filter(t => !s.selectedOrder.includes(t.id));
+    const idSet = new Set(s.selectedOrder);
+    const orderMap = {};
+    s.selectedOrder.forEach((id, i) => orderMap[id] = i);
+    const tiles = [];
+    s.hands[s.turn] = hand.filter(t => { if (idSet.has(t.id)) { tiles.push(t); return false; } return true; });
+    for (let gi = 0; gi < s.board.length; gi++) {
+      s.board[gi] = s.board[gi].filter(t => { if (idSet.has(t.id)) { tiles.push(t); return false; } return true; });
+    }
+    s.board = s.board.filter(g => g.length > 0);
     s.selectedOrder = [];
+    tiles.sort((a, b) => (orderMap[a.id] ?? 999) - (orderMap[b.id] ?? 999));
     return tiles;
+  }
+
+  function returnSelectedToHand() {
+    if (s.selectedOrder.length === 0) return;
+    const idSet = new Set(s.selectedOrder);
+    const toReturn = [];
+    ensureSnapshot();
+    for (let gi = 0; gi < s.board.length; gi++) {
+      s.board[gi] = s.board[gi].filter(t => { if (idSet.has(t.id)) { toReturn.push(t); return false; } return true; });
+    }
+    s.board = s.board.filter(g => g.length > 0);
+    s.selectedOrder = [];
+    s.hands[s.turn].push(...toReturn);
+    render();
   }
 
   function playSelectedAsNewGroup() {
     if (s.selectedOrder.length === 0) return;
     ensureSnapshot();
-    const tiles = takeSelectedFromHand();
+    const tiles = takeAllSelected();
     s.board.push(autoArrangeGroup(tiles));
     render();
   }
@@ -1980,8 +1580,22 @@ function renderLocalGame() {
   function addToGroup(gi) {
     if (s.selectedOrder.length === 0) return;
     ensureSnapshot();
-    const tiles = takeSelectedFromHand();
-    s.board[gi] = autoArrangeGroup(s.board[gi].concat(tiles));
+    const idSet = new Set(s.selectedOrder);
+    const orderMap = {};
+    s.selectedOrder.forEach((id, i) => orderMap[id] = i);
+    const toAdd = [];
+    const targetGroup = s.board[gi];
+    s.hands[s.turn] = s.hands[s.turn].filter(t => { if (idSet.has(t.id)) { toAdd.push(t); return false; } return true; });
+    for (let i = 0; i < s.board.length; i++) {
+      if (s.board[i] === targetGroup) continue;
+      s.board[i] = s.board[i].filter(t => { if (idSet.has(t.id)) { toAdd.push(t); return false; } return true; });
+    }
+    s.board = s.board.filter(g => g.length > 0 || g === targetGroup);
+    const newGi = s.board.indexOf(targetGroup);
+    toAdd.sort((a, b) => (orderMap[a.id] ?? 999) - (orderMap[b.id] ?? 999));
+    if (newGi !== -1) s.board[newGi] = autoArrangeGroup(targetGroup.concat(toAdd));
+    else s.board.push(autoArrangeGroup(toAdd));
+    s.selectedOrder = [];
     render();
   }
 
@@ -2048,38 +1662,23 @@ function renderLocalGame() {
     render();
   }
 
-  function dropToHand(tileId, insertIndex) {
+  function dropToHand(tileId) {
     if (s.winner) return;
     const hand = s.hands[s.turn];
     const inHandIdx = hand.findIndex(t => t.id === tileId);
-    if (inHandIdx !== -1) {
-      if (insertIndex == null) return;
-      const [moved] = hand.splice(inHandIdx, 1);
-      let idx = insertIndex;
-      if (inHandIdx < insertIndex) idx -= 1;
-      idx = Math.max(0, Math.min(idx, hand.length));
-      hand.splice(idx, 0, moved);
-      s.sortModes[s.turn] = "manual";
-      render();
-      return;
-    }
+    if (inHandIdx !== -1) return;
     if (isLockedTile(s.snapshot, s.board, tileId)) {
       toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
       return;
     }
     ensureSnapshot();
     const tile = removeTileFromBoardById(tileId);
-    if (tile) {
-      if (insertIndex == null || insertIndex >= hand.length) hand.push(tile);
-      else hand.splice(insertIndex, 0, tile);
-    }
+    if (tile) hand.push(tile);
     render();
   }
 
   function sortHand() {
-    const newMode = s.sortModes[s.turn] === "color" ? "number" : "color"; // manual/number → color, color → number
-    s.sortModes[s.turn] = newMode;
-    s.hands[s.turn] = newMode === "color" ? sortTilesByColor(s.hands[s.turn]) : sortTilesByNumber(s.hands[s.turn]);
+    s.hands[s.turn] = sortTiles(s.hands[s.turn]);
     render();
   }
 
@@ -2103,8 +1702,7 @@ function renderLocalGame() {
       s.snapshot = null; s.snapshotHand = null;
     }
     const t = s.pool.shift();
-    const fn = s.sortModes[s.turn] === "number" ? sortTilesByNumber : sortTilesByColor;
-    s.hands[s.turn] = fn(s.hands[s.turn].concat([t]));
+    s.hands[s.turn] = sortTiles(s.hands[s.turn].concat([t]));
     passTurn(other, s.names[other] + "님의 차례입니다.");
   }
 
@@ -2136,37 +1734,25 @@ function renderLocalGame() {
     render();
   }
 
-  const boardEval = evaluateBoard(s.board);
-  const boardValid = boardEval.valid;
+  const boardValid = evaluateBoard(s.board).valid;
   const hand = s.hands[s.turn];
 
-  function applyPenalty() {
-    const penaltyCount = countPenaltyTiles(s.board, s.snapshot);
-    if (s.snapshot) {
-      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
-      s.hands[s.turn] = s.snapshotHand.map(t => Object.assign({}, t));
-      s.snapshot = null; s.snapshotHand = null;
-    }
-    const penalty = 3 + penaltyCount;
-    const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
-    const mode = s.sortModes[s.turn];
-    const fn = mode === "number" ? sortTilesByNumber : sortTilesByColor;
-    s.hands[s.turn] = mode === "manual" ? s.hands[s.turn].concat(drawn) : fn(s.hands[s.turn].concat(drawn));
-    s.penaltyMode = false;
-    s.selectedOrder = [];
-    const penaltyMsg = "페널티: " + drawn.length + "개 가져옴.";
-    passTurn(other, penaltyMsg + " " + s.names[other] + "님의 차례입니다.");
-  }
+  const lockedIds = new Set();
+  s.board.forEach(group => group.forEach(tile => {
+    if (isLockedTile(s.snapshot, s.board, tile.id)) lockedIds.add(tile.id);
+  }));
 
-  const controls = s.penaltyMode
-    ? [btn("그만 (페널티 적용)", "btn-red btn-big", applyPenalty, false)]
-    : [
-        btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
-          playSelectedAsNewGroup, s.selectedOrder.length === 0 || !!s.winner),
-        btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !!s.winner),
-        btn("타일 뽑기", "btn-purple", drawTile, !!s.winner),
-        btn("턴 종료 ✓", "btn-yellow", endTurn, !!s.winner)
-      ];
+  const boardSelectedCount = s.selectedOrder.filter(id => s.board.some(g => g.some(t => t.id === id))).length;
+
+  const controls = [
+    btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
+      playSelectedAsNewGroup, s.selectedOrder.length === 0 || !!s.winner),
+    boardSelectedCount > 0
+      ? btn("선택 보드→손패 (" + boardSelectedCount + ")", "btn-purple", returnSelectedToHand, !!s.winner)
+      : btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !!s.winner),
+    btn("타일 뽑기", "btn-purple", drawTile, !!s.winner || boardSelectedCount > 0),
+    btn("턴 종료 ✓", "btn-yellow", endTurn, !!s.winner)
+  ];
 
   let overlayEl = null;
   if (s.winner !== null) {
@@ -2179,12 +1765,10 @@ function renderLocalGame() {
   }
 
   let timerEl = null;
-  if (!s.winner && s.turnDeadline && !s.penaltyMode) {
+  if (!s.winner && s.turnDeadline) {
     timerEl = buildTimerBadge(s.turnDeadline, () => {
-      s.penaltyMode = true;
-      s.turnDeadline = null;
-      s.message = "⏰ 시간 초과! 보드를 최대한 정리하고 '그만' 버튼을 누르세요. (기본 3개 + 미완성 타일 수만큼 페널티)";
-      render();
+      toast("시간 초과! 타일을 뽑습니다.");
+      drawTile();
     });
   }
 
@@ -2197,559 +1781,14 @@ function renderLocalGame() {
     board: s.board,
     hand,
     selectedOrder: s.selectedOrder,
+    lockedIds,
     onToggleSelect: toggleSelect,
-    onReturnTile: returnTile,
     onAddToGroup: addToGroup,
     onDropToGroup: dropToGroup,
     onDropToNewGroup: dropToNewGroup,
     onDropToHand: dropToHand,
     onSortHand: sortHand,
-    sortMode: s.sortModes[s.turn],
     canInteract: !s.winner,
-    onExit: goLobby,
-    controlsEls: controls,
-    winnerOverlayEl: overlayEl,
-    timerEl: timerEl
-  });
-}
-
-// ============ 온라인 1:1 대전 모드 ============
-// PeerJS의 무료 공개 클라우드 시그널링 서버를 이용한 WebRTC P2P 연결.
-// 호스트가 게임 상태의 "원본"을 들고, 매 액션마다 전체 상태를 상대에게 전송한다.
-let onlinePeer = null;
-let onlineConn = null;
-let onlineState = null; // { role, myName, peerName, peerId, status, ...게임필드 }
-let onlineConnectTimer = null;
-
-function teardownOnlineConnection() {
-  clearOnlineConnectTimer();
-  if (onlineConn) { try { onlineConn.close(); } catch (e) {} onlineConn = null; }
-  if (onlinePeer) { try { onlinePeer.destroy(); } catch (e) {} onlinePeer = null; }
-  onlineState = null;
-}
-
-function shortRoomCode() {
-  // PeerJS id는 영문/숫자만 권장. 사람이 읽기 쉬운 6자리 코드를 생성.
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
-}
-
-function sendOnline(msg) {
-  if (onlineConn && onlineConn.open) {
-    try { onlineConn.send(msg); } catch (e) {}
-  }
-}
-
-function newOnlineGameState(names, mySeat) {
-  const deck = shuffle(createDeck());
-  return {
-    names, // [host이름, guest이름]
-    mySeat, // 0(host) 또는 1(guest) - 내가 어느 자리인지
-    pool: deck.slice(28),
-    hands: [sortTiles(deck.slice(0, 14)), sortTiles(deck.slice(14, 28))],
-    sortMode: "color", // 내 화면에서만 쓰는 로컬 UI 상태, 상대와 동기화하지 않음
-    board: [],
-    snapshot: null,
-    snapshotHand: null,
-    initialPlayed: [false, false],
-    turn: 0,
-    turnDeadline: newTurnDeadline(),
-    selectedOrder: [],
-    message: names[0] + "님의 차례입니다.",
-    winner: null
-  };
-}
-
-// 상대에게 보낼 때는 내 손패만 숨기지 않고 전체를 보내되,
-// 받는 쪽 클라이언트가 자기 hands 배열에서 "내 손패"만 그대로 보고
-// 상대 손패는 개수만 쓰도록 렌더링 단계에서 처리한다 (간단한 신뢰 기반 동기화).
-function broadcastOnlineState() {
-  const s = onlineState;
-  if (!s) return;
-  sendOnline({
-    type: "state",
-    payload: {
-      names: s.names,
-      pool: s.pool,
-      hands: s.hands,
-      board: s.board,
-      initialPlayed: s.initialPlayed,
-      turn: s.turn,
-      turnDeadline: s.turnDeadline,
-      message: s.message,
-      winner: s.winner
-    }
-  });
-}
-
-function applyRemoteState(payload) {
-  const s = onlineState;
-  if (!s) return;
-  s.names = payload.names;
-  s.pool = payload.pool;
-  s.hands = payload.hands;
-  s.board = payload.board;
-  s.initialPlayed = payload.initialPlayed;
-  s.turn = payload.turn;
-  s.turnDeadline = payload.turnDeadline;
-  s.message = payload.message;
-  s.winner = payload.winner;
-  s.snapshot = null;
-  s.snapshotHand = null;
-  s.selectedOrder = [];
-  render();
-}
-
-function setupHostConnectionHandlers(conn, code) {
-  onlineConn = conn;
-  conn.on("open", () => {
-    onlineState.status = "playing";
-    sendOnline({ type: "hello", payload: { name: onlineState.myName } });
-    render();
-  });
-  conn.on("data", (msg) => handleOnlineMessage(msg));
-  conn.on("close", () => {
-    if (onlineState) { onlineState.status = "disconnected"; render(); }
-  });
-}
-
-function handleOnlineMessage(msg) {
-  if (!msg || !msg.type) return;
-  if (msg.type === "hello") {
-    if (onlineState) onlineState.peerName = msg.payload.name;
-    if (onlineState && onlineState.mySeat === 0 && !onlineState.board) {
-      // 호스트: 상대 이름을 받았으니 게임 시작 상태를 만들어 전송 (최초 1회만)
-      const names = [onlineState.myName, msg.payload.name];
-      onlineState = Object.assign(newOnlineGameState(names, 0), {
-        role: "host", myName: onlineState.myName, peerName: msg.payload.name, status: "playing"
-      });
-      broadcastOnlineState();
-      render();
-    }
-  } else if (msg.type === "state") {
-    applyRemoteState(msg.payload);
-  } else if (msg.type === "toast") {
-    toast(msg.payload);
-  }
-}
-
-function clearOnlineConnectTimer() {
-  if (onlineConnectTimer) { clearTimeout(onlineConnectTimer); onlineConnectTimer = null; }
-}
-
-function failOnlineConnection(msg) {
-  clearOnlineConnectTimer();
-  if (!onlineState) return;
-  onlineState.status = "error";
-  onlineState.errorMsg = msg;
-  render();
-}
-
-function startOnlineConnection(cfg) {
-  clearOnlineConnectTimer();
-
-  if (cfg.role === "host") {
-    const code = shortRoomCode();
-    onlineState.myCode = code;
-    onlinePeer = new Peer("rmk-" + code);
-    onlinePeer.on("open", () => { render(); });
-    onlinePeer.on("connection", (conn) => {
-      clearOnlineConnectTimer();
-      setupHostConnectionHandlers(conn, code);
-    });
-    onlinePeer.on("error", (err) => {
-      const type = err && err.type;
-      let msg = "연결 서버에 접속하지 못했습니다. 무료 공개 서버가 일시적으로 불안정할 수 있어요. 잠시 후 다시 시도해주세요.";
-      if (type === "unavailable-id") msg = "방 코드가 이미 사용 중입니다. 다시 시도해주세요.";
-      failOnlineConnection(msg);
-    });
-    onlinePeer.on("disconnected", () => {
-      if (onlineState && onlineState.status === "connecting") {
-        failOnlineConnection("연결 서버와의 연결이 끊어졌습니다. 다시 시도해주세요.");
-      }
-    });
-    // 호스트는 상대가 들어올 때까지 무한히 기다리는 게 정상이라 타임아웃을 걸지 않음.
-  } else {
-    onlinePeer = new Peer();
-    onlinePeer.on("open", () => {
-      const targetId = "rmk-" + cfg.joinCode.trim().toUpperCase();
-      const conn = onlinePeer.connect(targetId, { reliable: true });
-      onlineConn = conn;
-
-      // 게스트는 데이터 채널이 일정 시간 안에 열리지 않으면 실패로 처리 (무한 대기 방지)
-      onlineConnectTimer = setTimeout(() => {
-        failOnlineConnection("방에 연결할 수 없습니다. 방 코드를 확인하거나, 호스트가 방을 아직 열어두고 있는지 확인해주세요.");
-      }, 15000);
-
-      conn.on("open", () => {
-        clearOnlineConnectTimer();
-        onlineState.status = "playing";
-        sendOnline({ type: "hello", payload: { name: onlineState.myName } });
-        render();
-      });
-      conn.on("data", (msg) => handleOnlineMessage(msg));
-      conn.on("close", () => {
-        if (onlineState) { onlineState.status = "disconnected"; render(); }
-      });
-      conn.on("error", () => {
-        failOnlineConnection("방에 연결하는 중 오류가 발생했습니다. 방 코드를 확인하고 다시 시도해주세요.");
-      });
-      render();
-    });
-    onlinePeer.on("error", (err) => {
-      const type = err && err.type;
-      let msg = "연결 서버에 접속하지 못했습니다. 무료 공개 서버가 일시적으로 불안정할 수 있어요. 잠시 후 다시 시도해주세요.";
-      if (type === "peer-unavailable") msg = "해당 방 코드를 찾을 수 없습니다. 코드를 다시 확인하거나, 호스트가 방을 열어두었는지 확인해주세요.";
-      failOnlineConnection(msg);
-    });
-  }
-}
-
-function renderOnlineGame() {
-  const cfg = state; // { role, myName, joinCode? }
-
-  if (!onlineState) {
-    onlineState = {
-      role: cfg.role,
-      myName: cfg.myName,
-      mySeat: cfg.role === "host" ? 0 : 1,
-      status: "connecting",
-      peerName: null,
-      myCode: null,
-      connectAttempt: cfg.__retryAttempt || 0
-    };
-    startOnlineConnection(cfg);
-  }
-
-  const s = onlineState;
-
-  // ---- 연결 대기/오류 화면 ----
-  if (s.status === "connecting" || s.status === "waiting" || s.status === "error" || s.status === "disconnected") {
-    const wrap = h("div", { class: "screen center-screen" });
-    wrap.appendChild(h("div", { class: "logo" }, ["루미큐브 ", h("span", { class: "accent" }, ["ONLINE"])]));
-
-    if (s.status === "error") {
-      wrap.appendChild(h("div", { style: { margin: "12px 0", maxWidth: "320px" } }, [s.errorMsg || "연결 중 오류가 발생했습니다."]));
-      const retryRow = h("div", { style: { display: "flex", gap: "8px" } });
-      retryRow.appendChild(btn("다시 시도", "btn-green btn-big", () => {
-        const attempt = (s.connectAttempt || 0) + 1;
-        teardownOnlineConnection();
-        state = Object.assign({}, cfg, { __retryAttempt: attempt });
-        render();
-      }));
-      retryRow.appendChild(btn("로비로", "btn-purple btn-big", goLobby));
-      wrap.appendChild(retryRow);
-      return wrap;
-    }
-    if (s.status === "disconnected") {
-      wrap.appendChild(h("div", { style: { margin: "12px 0" } }, ["상대와의 연결이 끊어졌습니다."]));
-      wrap.appendChild(btn("로비로 돌아가기", "btn-purple btn-big", goLobby));
-      return wrap;
-    }
-
-    if (s.role === "host") {
-      wrap.appendChild(h("div", { class: "subtitle" }, ["친구에게 아래 방 코드를 알려주세요"]));
-      const codeBox = h("div", {
-        style: {
-          fontSize: "32px", fontWeight: "700", letterSpacing: "4px",
-          padding: "16px 24px", borderRadius: "12px",
-          background: "rgba(255,255,255,0.08)", marginBottom: "16px",
-          fontFamily: "'Roboto Slab', serif"
-        }
-      }, [s.myCode || "생성 중..."]);
-      wrap.appendChild(codeBox);
-      wrap.appendChild(h("div", { style: { fontSize: "13px", opacity: "0.6", marginBottom: "20px" } },
-        ["친구가 이 코드를 입력하면 자동으로 게임이 시작됩니다. 잠시만 기다려주세요…"]));
-    } else {
-      wrap.appendChild(h("div", { class: "subtitle" }, ["방에 연결하는 중입니다…"]));
-      wrap.appendChild(h("div", { style: { fontSize: "13px", opacity: "0.6", marginBottom: "8px" } },
-        ["최대 15초 정도 걸릴 수 있어요. 호스트가 방 코드 화면을 계속 띄워두고 있어야 합니다."]));
-      if (s.connectAttempt > 0) {
-        wrap.appendChild(h("div", { style: { fontSize: "12px", opacity: "0.5", marginBottom: "8px" } },
-          [(s.connectAttempt + 1) + "번째 시도 중…"]));
-      }
-    }
-    wrap.appendChild(btn("취소하고 로비로", "btn-purple", goLobby));
-    return wrap;
-  }
-
-  // ---- 아직 상대 hello를 못 받아 게임판이 안 만들어진 경우 (guest 쪽) ----
-  if (!s.board) {
-    const wrap = h("div", { class: "screen center-screen" });
-    wrap.appendChild(h("div", { class: "logo" }, ["루미큐브 ", h("span", { class: "accent" }, ["ONLINE"])]));
-    wrap.appendChild(h("div", { class: "subtitle" }, ["연결되었습니다. 게임을 준비하는 중입니다…"]));
-    wrap.appendChild(btn("취소하고 로비로", "btn-purple", goLobby));
-    return wrap;
-  }
-
-  const mySeat = s.mySeat;
-  const other = mySeat === 0 ? 1 : 0;
-  const myTurn = s.turn === mySeat;
-
-  function ensureSnapshot() {
-    if (s.snapshot === null) {
-      s.snapshot = s.board.map(g => g.map(t => Object.assign({}, t)));
-      s.snapshotHand = s.hands[mySeat].map(t => Object.assign({}, t));
-    }
-  }
-
-  function toggleSelect(id) {
-    if (s.winner !== null || !myTurn) return;
-    const idx = s.selectedOrder.indexOf(id);
-    if (idx !== -1) s.selectedOrder.splice(idx, 1);
-    else s.selectedOrder.push(id);
-    render();
-  }
-
-  function takeSelectedFromHand() {
-    const hand = s.hands[mySeat];
-    const tiles = s.selectedOrder.map(id => hand.find(t => t.id === id)).filter(Boolean);
-    s.hands[mySeat] = hand.filter(t => !s.selectedOrder.includes(t.id));
-    s.selectedOrder = [];
-    return tiles;
-  }
-
-  function playSelectedAsNewGroup() {
-    if (!myTurn || s.selectedOrder.length === 0) return;
-    ensureSnapshot();
-    const tiles = takeSelectedFromHand();
-    s.board.push(autoArrangeGroup(tiles));
-    render();
-  }
-
-  function addToGroup(gi) {
-    if (!myTurn || s.selectedOrder.length === 0) return;
-    ensureSnapshot();
-    const tiles = takeSelectedFromHand();
-    s.board[gi] = autoArrangeGroup(s.board[gi].concat(tiles));
-    render();
-  }
-
-  function returnTile(gi, ti) {
-    if (!myTurn || s.winner !== null) return;
-    const tile = s.board[gi][ti];
-    if (isLockedTile(s.snapshot, s.board, tile.id)) {
-      toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
-      return;
-    }
-    ensureSnapshot();
-    s.board[gi].splice(ti, 1);
-    s.board = s.board.filter(g => g.length > 0);
-    s.hands[mySeat].push(tile);
-    render();
-  }
-
-  function removeTileFromBoardById(tileId) {
-    for (let gi = 0; gi < s.board.length; gi++) {
-      const ti = s.board[gi].findIndex(t => t.id === tileId);
-      if (ti !== -1) {
-        const tile = s.board[gi][ti];
-        s.board[gi].splice(ti, 1);
-        s.board = s.board.filter(g => g.length > 0);
-        return tile;
-      }
-    }
-    return null;
-  }
-
-  function dropToGroup(gi, tileId) {
-    if (!myTurn || s.winner !== null) return;
-    ensureSnapshot();
-    const hand = s.hands[mySeat];
-    let tile = null;
-    const inHandIdx = hand.findIndex(t => t.id === tileId);
-    if (inHandIdx !== -1) {
-      tile = hand[inHandIdx];
-      hand.splice(inHandIdx, 1);
-      const selIdx = s.selectedOrder.indexOf(tileId);
-      if (selIdx !== -1) s.selectedOrder.splice(selIdx, 1);
-    } else {
-      tile = removeTileFromBoardById(tileId);
-    }
-    if (tile) s.board[gi] = autoArrangeGroup(s.board[gi].concat([tile]));
-    render();
-  }
-
-  function dropToNewGroup(tileId) {
-    if (!myTurn || s.winner !== null) return;
-    ensureSnapshot();
-    const hand = s.hands[mySeat];
-    let tile = null;
-    const inHandIdx = hand.findIndex(t => t.id === tileId);
-    if (inHandIdx !== -1) {
-      tile = hand[inHandIdx];
-      hand.splice(inHandIdx, 1);
-      const selIdx = s.selectedOrder.indexOf(tileId);
-      if (selIdx !== -1) s.selectedOrder.splice(selIdx, 1);
-    } else {
-      tile = removeTileFromBoardById(tileId);
-    }
-    if (tile) s.board.push([tile]);
-    render();
-  }
-
-  function dropToHand(tileId, insertIndex) {
-    if (!myTurn || s.winner !== null) return;
-    const hand = s.hands[mySeat];
-    const inHandIdx = hand.findIndex(t => t.id === tileId);
-    if (inHandIdx !== -1) {
-      if (insertIndex == null) return;
-      const [moved] = hand.splice(inHandIdx, 1);
-      let idx = insertIndex;
-      if (inHandIdx < insertIndex) idx -= 1;
-      idx = Math.max(0, Math.min(idx, hand.length));
-      hand.splice(idx, 0, moved);
-      s.sortMode = "manual";
-      render();
-      return;
-    }
-    if (isLockedTile(s.snapshot, s.board, tileId)) {
-      toast("이전 턴에 이미 낸 패는 다시 가져올 수 없습니다.");
-      return;
-    }
-    ensureSnapshot();
-    const tile = removeTileFromBoardById(tileId);
-    if (tile) {
-      if (insertIndex == null || insertIndex >= hand.length) hand.push(tile);
-      else hand.splice(insertIndex, 0, tile);
-    }
-    render();
-  }
-
-  function sortHand() {
-    s.sortMode = s.sortMode === "color" ? "number" : "color";
-    s.hands[mySeat] = s.sortMode === "color" ? sortTilesByColor(s.hands[mySeat]) : sortTilesByNumber(s.hands[mySeat]);
-    render();
-  }
-
-  function cancelTurn() {
-    if (s.snapshot) {
-      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
-      s.hands[mySeat] = s.snapshotHand.map(t => Object.assign({}, t));
-    }
-    s.snapshot = null; s.snapshotHand = null;
-    s.selectedOrder = [];
-    s.message = "이번 턴 변경을 취소했습니다.";
-    render();
-  }
-
-  function finishLocalTurnAndSync(nextTurn, nextMessage) {
-    s.snapshot = null; s.snapshotHand = null;
-    s.selectedOrder = [];
-    s.turn = nextTurn;
-    s.turnDeadline = newTurnDeadline();
-    s.message = nextMessage;
-    broadcastOnlineState();
-    render();
-  }
-
-  function drawTile() {
-    if (!myTurn || s.winner !== null) return;
-    if (s.pool.length === 0) { toast("풀이 비었습니다."); return; }
-    if (s.snapshot) {
-      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
-      s.hands[mySeat] = s.snapshotHand.map(t => Object.assign({}, t));
-      s.snapshot = null; s.snapshotHand = null;
-    }
-    const t = s.pool.shift();
-    const fn = s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor;
-    s.hands[mySeat] = fn(s.hands[mySeat].concat([t]));
-    finishLocalTurnAndSync(other, s.names[other] + "님의 차례입니다.");
-  }
-
-  function endTurn() {
-    if (!myTurn || s.winner !== null) return;
-    const evalRes = evaluateBoard(s.board);
-    if (!evalRes.valid) { toast("보드에 유효하지 않은 묶음이 있습니다."); return; }
-    if (!s.initialPlayed[mySeat]) {
-      if (!s.snapshot) { toast("첫 배치는 보드에 타일을 내야 합니다 (합계 30 이상)."); return; }
-      const added = computeAddedValue(s.snapshot, s.board);
-      if (added < 30) { toast("첫 배치는 합계 30 이상이어야 합니다. 현재 추가분: " + added + "점"); return; }
-      s.initialPlayed[mySeat] = true;
-    }
-    if (s.hands[mySeat].length === 0) {
-      s.winner = mySeat;
-      s.snapshot = null; s.snapshotHand = null;
-      broadcastOnlineState();
-      render();
-      return;
-    }
-    finishLocalTurnAndSync(other, s.names[other] + "님의 차례입니다.");
-  }
-
-  const boardEval = evaluateBoard(s.board);
-  const boardValid = boardEval.valid;
-  const hand = s.hands[mySeat];
-
-  function applyPenalty() {
-    const penaltyCount = countPenaltyTiles(s.board, s.snapshot);
-    if (s.snapshot) {
-      s.board = s.snapshot.map(g => g.map(t => Object.assign({}, t)));
-      s.hands[mySeat] = s.snapshotHand.map(t => Object.assign({}, t));
-      s.snapshot = null; s.snapshotHand = null;
-    }
-    const penalty = 3 + penaltyCount;
-    const drawn = s.pool.splice(0, Math.min(penalty, s.pool.length));
-    const fn = s.sortMode === "number" ? sortTilesByNumber : sortTilesByColor;
-    s.hands[mySeat] = s.sortMode === "manual" ? s.hands[mySeat].concat(drawn) : fn(s.hands[mySeat].concat(drawn));
-    s.penaltyMode = false;
-    s.selectedOrder = [];
-    finishLocalTurnAndSync(other, s.names[other] + "님의 차례입니다. (상대 페널티 " + drawn.length + "개 수령)");
-  }
-
-  const controls = s.penaltyMode
-    ? [btn("그만 (페널티 적용)", "btn-red btn-big", applyPenalty, false)]
-    : [
-        btn("새 묶음 놓기 (" + s.selectedOrder.length + ")", "btn-green",
-          playSelectedAsNewGroup, s.selectedOrder.length === 0 || !myTurn || s.winner !== null),
-        btn("턴 취소", "btn-red", cancelTurn, !s.snapshot || !myTurn || s.winner !== null),
-        btn("타일 뽑기", "btn-purple", drawTile, !myTurn || s.winner !== null),
-        btn("턴 종료 ✓", "btn-yellow", endTurn, !myTurn || s.winner !== null)
-      ];
-
-  let overlayEl = null;
-  if (s.winner !== null) {
-    overlayEl = winnerOverlay(
-      "🏆",
-      s.names[s.winner] + "님이 승리했습니다! 🎉",
-      null,
-      goLobby
-    );
-  }
-
-  let timerEl = null;
-  if (s.winner === null && s.turnDeadline && !s.penaltyMode) {
-    timerEl = buildTimerBadge(s.turnDeadline, () => {
-      if (myTurn) {
-        s.penaltyMode = true;
-        s.turnDeadline = null;
-        s.message = "⏰ 시간 초과! 보드를 최대한 정리하고 '그만' 버튼을 누르세요. (기본 3개 + 미완성 타일 수만큼 페널티)";
-        render();
-      }
-    });
-  }
-
-  return buildGameShell({
-    title: "루미큐브 · 온라인 1:1 대전",
-    subtitle: (myTurn ? "내 차례" : s.names[s.turn] + "님의 차례") +
-      " · 풀 " + s.pool.length + "개 · 상대 패 " + s.hands[other].length + "개",
-    message: s.message,
-    tone: myTurn ? "go" : "wait",
-    boardValid,
-    board: s.board,
-    hand,
-    selectedOrder: s.selectedOrder,
-    onToggleSelect: toggleSelect,
-    onReturnTile: returnTile,
-    onAddToGroup: addToGroup,
-    onDropToGroup: dropToGroup,
-    onDropToNewGroup: dropToNewGroup,
-    onDropToHand: dropToHand,
-    onSortHand: sortHand,
-    sortMode: s.sortMode,
-    canInteract: (myTurn || s.penaltyMode) && s.winner === null,
     onExit: goLobby,
     controlsEls: controls,
     winnerOverlayEl: overlayEl,
@@ -2774,7 +1813,7 @@ function renderPassScreen(s) {
 }
 
 // ============ 초기 렌더 ============
-renderAsync();
+render();
 </script>
 </body>
 </html>
